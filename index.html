@@ -1,4 +1,14 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
 <title>사내 업무포탈</title>
+<!-- Supabase 연결: 앱이 쓰던 claude.ai 저장소(window.claude)를 Supabase로 바꿔 끼운다 (js/daon-supabase.js) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/daon-supabase.js"></script>
 <style>
 /* 화면 서체는 관리자가 고른다(FONT_CHOICES, 기본 프리텐다드). Paperlogy는 로고 글씨(.logo-name · .logo-en)에 늘 쓴다
    Pretendard: SIL Open Font License 1.1 (github.com/orioncactus/pretendard) */
@@ -1931,7 +1941,7 @@ const postNoun = menu => (menu.id === 'notice' ? '공지' : '글');
 const PE_MAX_FILES = 10, PE_MAX_MB = 20;   // 공지 첨부 한도
 /* 첨부 저장: 게시 링크에서는 downloads 기능(보는 사람이 저장을 확인), 로컬 파일로 열면 일반 내려받기 */
 async function saveAttachment(x) {
-  if (!x?.blob && x?.asset) { try { const r = await fetch(`/_blob/${x.asset}`); if (!r.ok) throw 0; x = { ...x, blob: await r.blob() }; } catch (e) { toast('첨부파일을 불러오지 못했습니다.'); return; } }
+  if (!x?.blob && x?.asset) { try { const r = await fetch(window.DAON_BLOB ? DAON_BLOB(x.asset) : `/_blob/${x.asset}`); if (!r.ok) throw 0; x = { ...x, blob: await r.blob() }; } catch (e) { toast('첨부파일을 불러오지 못했습니다.'); return; } }
   if (!x?.blob) { toast(x?.sid === undefined && !x?.asset ? '파일 내용이 없습니다. 예시 첨부이거나, 다른 브라우저에서 올린 파일입니다.' : '파일 내용이 없습니다.'); return; }
   const dl = window.claude?.use ? await window.claude.use('downloads').catch(() => null) : null;
   if (!dl) {
@@ -2952,7 +2962,7 @@ const photoStore = {
     for (let i = SITE_PHOTOS.length - 1; i >= 0; i--) if (SITE_PHOTOS[i].saved) SITE_PHOTOS.splice(i, 1);
     for (const list of Object.values(this.rows)) for (const r of list || []) {
       if (!r || !r.no || !r.date) continue;
-      SITE_PHOTOS.push({ ...r, id: PHOTO_SEQ++, saved: true, src: r.thumb || r.full, big: r.asset ? `/_blob/${r.asset}` : r.full || r.thumb });
+      SITE_PHOTOS.push({ ...r, id: PHOTO_SEQ++, saved: true, src: r.thumb || r.full, big: r.asset ? (window.DAON_BLOB ? DAON_BLOB(r.asset) : `/_blob/${r.asset}`) : r.full || r.thumb });
     }
     photoChanged();
   },
@@ -5694,7 +5704,7 @@ function myInfoEditor() {
     <h4 class="mi-h">로그인 비밀번호 변경 <span class="crumb">(바꾸지 않으려면 비워 두세요)</span></h4>
     <div class="form">
       ${frow('지금 비밀번호', '<input class="field" name="cur" type="password" autocomplete="current-password">')}
-      ${frow('새 비밀번호', '<input class="field" name="n1" type="password" autocomplete="new-password" placeholder="4자 이상 · 사번과 다르게">')}
+      ${frow('새 비밀번호', '<input class="field" name="n1" type="password" autocomplete="new-password" placeholder="' + PW_MIN + '자 이상 · 사번과 다르게">')}
       ${frow('새 비밀번호 확인', '<input class="field" name="n2" type="password" autocomplete="new-password">')}
     </div>
     <p class="se-note">이름 · 직위 · 부서 · 입사일은 관리자(직원 관리)만 바꿀 수 있습니다. 비밀번호를 잊으면 관리자에게 초기화를 요청하세요.</p>`,
@@ -5708,7 +5718,7 @@ function myInfoEditor() {
     if (pwChange) {
       if (!cur) { toast('지금 비밀번호를 입력하세요.'); return; }
       if (!(await auth.check(me.empNo, cur))) { toast('지금 비밀번호가 맞지 않습니다.'); return; }
-      if (n1.length < 4) { toast('새 비밀번호는 4자 이상이어야 합니다.'); return; }
+      if (n1.length < PW_MIN) { toast(`새 비밀번호는 ${PW_MIN}자 이상이어야 합니다.`); return; }
       if (n1 === me.empNo) { toast('사번과 다른 비밀번호를 정하세요.'); return; }
       if (n1 !== n2) { toast('새 비밀번호가 서로 다릅니다.'); return; }
       if (n1 === cur) { toast('지금 비밀번호와 다른 비밀번호를 정하세요.'); return; }
@@ -7949,6 +7959,7 @@ const saveAddedStaff = list => saveStaffConfig(list, staffEdits);
 async function migrateEmp(o, n) {
   const db = siteStore.remote, jobs = [], fail = [];
   const run = (label, f) => jobs.push(Promise.resolve().then(f).catch(() => fail.push(label)));
+  if (window.daonAuth) { try { await daonAuth.changeEmp(o, n); } catch (e) { fail.push('로그인 계정'); } }   // Supabase 로그인 사번을 먼저 바꾼다
   if (ADMIN_EMPS.includes(o)) run('관리자 지정', () => saveAdminEmps(ADMIN_EMPS.map(e => (e === o ? n : e))));
   const sg = signStore.map[o];
   if (sg) run('결재 서명', async () => { await signStore.set(n, sg.img || ''); await signStore.reset(o); });
@@ -8850,9 +8861,13 @@ document.getElementById('btn-people').onclick = () => addTab('people', '임·직
    비밀번호: pw/<계정 id>/emp/<사번> = { emp, salt, hash, at } (PBKDF2, 원문은 저장하지 않음). 같은 사번 기록이 여럿이면 가장 나중 것
    로컬 파일: 이 브라우저(localStorage). 기록이 저장되는 곳은 그대로 접속한 claude.ai 계정 영역이다
    ※ 화면에서 막는 잠금이다. 저장소를 직접 다루는 사람까지 막지는 못한다 */
+/* Supabase(window.daonAuth)로 열면: 사번 · 비밀번호는 Supabase 로그인 계정으로 확인한다 (js/daon-supabase.js).
+   비밀번호 최소 길이는 Supabase 규칙(6자)에 맞춘다 */
+const SUPA = !!window.daonAuth;
+const PW_MIN = SUPA ? 6 : 4;
 const auth = {
   db: null, me: null, subs: {}, rows: {}, cur: null, waiting: 1, KEY: 'daon-login', LKEY: 'daon-pw-v1',
-  ready() { return this.forced || (!this.db ? siteStore.mode !== 'wait' : this.waiting === 0); },
+  ready() { return SUPA || this.forced || (!this.db ? siteStore.mode !== 'wait' : this.waiting === 0); },
   async hash(pw, salt) {
     const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
     const b = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: new TextEncoder().encode(salt), iterations: 120000, hash: 'SHA-256' }, k, 256);
@@ -8861,8 +8876,12 @@ const auth = {
   local() { try { return JSON.parse(localStorage.getItem(this.LKEY)) || {}; } catch (e) { return {}; } },
   recOf(emp) { return (this.db ? Object.values(this.rows) : Object.values(this.local())).filter(r => r && r.emp === emp && r.hash).sort((a, b) => a.at < b.at ? 1 : -1)[0] || null; },
   /* 'ok' | 'init'(초기 비밀번호) | false */
-  async check(emp, pw) { const r = this.recOf(emp); if (!r) return pw === emp ? 'init' : false; return (await this.hash(pw, r.salt)) === r.hash ? 'ok' : false; },
+  async check(emp, pw) {
+    if (SUPA) return (await daonAuth.verify(emp, pw)) ? 'ok' : false;   // 개인정보 변경의 '지금 비밀번호' 확인
+    const r = this.recOf(emp); if (!r) return pw === emp ? 'init' : false; return (await this.hash(pw, r.salt)) === r.hash ? 'ok' : false;
+  },
   async setPw(emp, pw) {
+    if (SUPA) { const r = await daonAuth.changePassword(pw); if (!r.ok) throw new Error(r.error); return; }
     const salt = [...crypto.getRandomValues(new Uint32Array(4))].join('-'), rec = { emp, salt, hash: await this.hash(pw, salt), at: new Date().toISOString() };
     if (!this.db) { const a = this.local(); a[emp] = rec; localStorage.setItem(this.LKEY, JSON.stringify(a)); return; }
     await this.db.doc(`pw/${this.me}/emp/${emp}`).set(rec);
@@ -8870,6 +8889,7 @@ const auth = {
   },
   /* 비밀번호 초기화(관리자): 그 사번의 기록을 모두 지워 초기 비밀번호(사번)로 돌린다 */
   async reset(emp) {
+    if (SUPA) return daonAuth.resetPassword(emp);
     if (!this.db) { const a = this.local(); delete a[emp]; localStorage.setItem(this.LKEY, JSON.stringify(a)); return true; }
     try { for (const k of Object.keys(this.rows).filter(k => this.rows[k]?.emp === emp)) { await this.db.doc(`pw/${k.split('/')[0]}/emp/${emp}`).delete(); delete this.rows[k]; } return true; } catch (e) { return false; }
   },
@@ -8902,7 +8922,7 @@ const auth = {
         <div class="lg-logo">${LOGO_LOCKUP}</div><h1 id="lg-t">사내 포털 로그인</h1>
         <div data-step="in"><label for="lg-emp">사번</label><input class="field" id="lg-emp" name="emp" inputmode="numeric" autocomplete="username" maxlength="12">
           <label for="lg-pw">비밀번호</label><input class="field" id="lg-pw" name="pw" type="password" autocomplete="current-password"></div>
-        <div data-step="new" hidden><p class="lg-note">처음 로그인했습니다. 사용할 새 비밀번호를 정하세요. (4자 이상, 숫자만 써도 됩니다. 사번과 다르게)</p>
+        <div data-step="new" hidden><p class="lg-note">처음 로그인했습니다. 사용할 새 비밀번호를 정하세요. (${PW_MIN}자 이상, 숫자만 써도 됩니다. 사번과 다르게)</p>
           <label for="lg-n1">새 비밀번호</label><input class="field" id="lg-n1" name="n1" type="password" autocomplete="new-password">
           <label for="lg-n2">새 비밀번호 확인</label><input class="field" id="lg-n2" name="n2" type="password" autocomplete="new-password"></div>
         <p class="lg-msg" role="alert"></p>
@@ -8917,11 +8937,35 @@ const auth = {
       if (!this.ready()) { msg.textContent = '회사 저장소에 연결하는 중입니다. 몇 초 뒤 다시 누르세요.'; return; }
       if (pending) {
         const n1 = f.elements.n1.value, n2 = f.elements.n2.value;
-        if (n1.length < 4) { msg.textContent = '새 비밀번호는 4자 이상이어야 합니다.'; return; }
+        if (n1.length < PW_MIN) { msg.textContent = `새 비밀번호는 ${PW_MIN}자 이상이어야 합니다.`; return; }
         if (n1 === pending.empNo) { msg.textContent = '사번과 다른 비밀번호를 정하세요.'; return; }
         if (n1 !== n2) { msg.textContent = '새 비밀번호가 서로 다릅니다.'; return; }
+        if (SUPA) {   // Supabase: 바꾸지 못하면 들어가지 않는다 (다음에도 초기 비밀번호를 묻게)
+          const btn = f.querySelector('[data-login]'); btn.disabled = true;
+          const r = await daonAuth.changePassword(n1); btn.disabled = false;
+          if (!r.ok) { msg.textContent = r.error === 'weak' ? `더 긴 비밀번호를 정하세요. (${PW_MIN}자 이상)` : '새 비밀번호를 저장하지 못했습니다. 잠시 후 다시 누르세요.'; return; }
+          this.enter(pending); toast('비밀번호를 바꿨습니다. 다음부터 새 비밀번호로 로그인하세요.'); return;
+        }
         try { await this.setPw(pending.empNo, n1); } catch (err) { this.enter(pending); toast('저장 권한이 없어 새 비밀번호를 저장하지 못했습니다. 다음에도 사번으로 로그인합니다.'); return; }
         this.enter(pending); toast('비밀번호를 바꿨습니다. 다음부터 새 비밀번호로 로그인하세요.'); return;
+      }
+      if (SUPA) {   // Supabase 로그인 → 직원 명단을 다 읽은 뒤 그 사번의 직원으로 들어간다
+        const btn = f.querySelector('[data-login]'); btn.disabled = true; msg.textContent = '확인하는 중입니다…';
+        const r = await daonAuth.signIn(v('emp'), f.elements.pw.value);
+        if (!r.ok) {
+          btn.disabled = false;
+          msg.textContent = r.error === 'wrong' ? '사번 또는 비밀번호가 맞지 않습니다.' : r.error === 'retired' ? '퇴사 처리되었거나 사용이 중지된 계정입니다. 관리부에 문의하세요.' : '서버에 연결하지 못했습니다. 인터넷 연결을 확인하고 다시 누르세요.';
+          f.elements.pw.select(); return;
+        }
+        await daonAuth.staffReady();
+        btn.disabled = false; msg.textContent = '';
+        const sp = STAFF.find(s => s.empNo === r.emp);
+        if (!sp) { await daonAuth.signOut(); msg.textContent = '직원 명단에 없는 사번입니다. 관리부에 문의하세요.'; return; }
+        if (r.mustChange) {
+          pending = sp; el.querySelector('[data-step="in"]').hidden = true; el.querySelector('[data-step="new"]').hidden = false;
+          f.querySelector('[data-login]').textContent = '비밀번호 바꾸고 로그인'; f.elements.n1.focus(); return;
+        }
+        this.enter(sp); return;
       }
       const p = STAFF.find(s => s.empNo === v('emp'));
       if (!p && RETIRED.some(s => s.empNo === v('emp'))) { msg.textContent = '퇴사 처리된 사번이라 로그인할 수 없습니다. 관리부에 문의하세요.'; return; }
@@ -8952,8 +8996,9 @@ const auth = {
     noticePopup();
   },
   logout() {
-    confirmBox('로그아웃', '로그아웃할까요? 열려 있는 화면은 모두 닫힙니다.', '로그아웃', () => {
+    confirmBox('로그아웃', '로그아웃할까요? 열려 있는 화면은 모두 닫힙니다.', '로그아웃', async () => {
       try { sessionStorage.removeItem(this.KEY); } catch (e) {}
+      if (SUPA) { await daonAuth.signOut(); location.reload(); return; }   // 읽어 둔 기록을 모두 비우고 처음부터
       this.cur = null; siteStore.demoEmp = null; syncAdminUi();
       document.querySelectorAll('.overlay').forEach(o => o.remove());
       this.show();
@@ -8961,6 +9006,17 @@ const auth = {
   },
   /* 시작: 이 탭에서 로그인한 적이 있으면 그대로, 아니면 로그인 화면 */
   boot() {
+    if (SUPA) {   // 이 탭에 Supabase 로그인이 남아 있으면 (새로고침) 그 직원으로 바로 들어간다
+      this.show();
+      daonAuth.booted.then(async signed => {
+        const pr = daonAuth.profile;
+        if (!signed || !pr || pr.must_change_pw) return;
+        await daonAuth.staffReady();
+        const p = STAFF.find(s => s.empNo === pr.emp_no);
+        if (p) this.enter(p, true);
+      });
+      return;
+    }
     let emp = null; try { emp = sessionStorage.getItem(this.KEY); } catch (e) {}
     const p = emp && STAFF.find(s => s.empNo === emp);
     if (p) this.enter(p, true); else this.show();
