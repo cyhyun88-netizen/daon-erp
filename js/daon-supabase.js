@@ -263,18 +263,38 @@
         const retired = (typeof RETIRED !== 'undefined' ? RETIRED : []).map(s => s.empNo).filter(Boolean);
         const { data, error } = await sb.rpc('admin_sync_employees', { p_staff: staff, p_retired: retired });
         if (error) throw error;
+        const say = typeof toast === 'function' ? toast : () => {};
+        if (data && (data.created || data.retired)) say(`직원 계정 맞춤: 새로 만듦 ${data.created}명 · 퇴사 차단 ${data.retired}명`);
+        console.info('[daon] 직원 계정 맞추기', staff.length, '명 확인', data);
+        devLog({ sync: 'ok', staff: staff.length, sample: staff.slice(0, 3), retired: retired.length, data });
         return data;
-      } catch (e) { console.warn('[daon] 직원 계정 맞추기 실패', e); return null; }
+      } catch (e) {
+        console.warn('[daon] 직원 계정 맞추기 실패', e);
+        devLog({ sync: 'fail', error: e && { message: e.message, code: e.code, details: e.details, hint: e.hint } });
+        if (typeof toast === 'function') toast('직원 계정 맞추기 실패: ' + ((e && (e.message || e.details)) || e));
+        return null;
+      }
     },
     async resetPassword(emp) { const { data, error } = await sb.rpc('admin_reset_password', { p_emp: emp }); return !error && data === true; },
     async changeEmp(o, n) { const { data, error } = await sb.rpc('admin_change_emp', { p_old: o, p_new: n }); if (error || data !== true) throw error || new Error('계정 없음'); return true; },
   };
 
   /* 관리자: 로그인하면 · 직원 명단을 고치면 계정을 맞춘다 (잠깐 모아서 한 번) */
+  // 내 PC에서 시험할 때만: 진단 기록을 로컬 서버로 보낸다 (배포된 사이트에서는 아무 일도 안 함)
+  function devLog(o) {
+    if (!/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) return;
+    try { fetch('/__log', { method: 'POST', body: JSON.stringify(o) }).catch(() => {}); } catch (e) {}
+  }
   let syncTimer = null;
   const scheduleSync = () => { clearTimeout(syncTimer); syncTimer = setTimeout(() => window.daonAuth.syncEmployees(), 2500); };
+  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+    window.addEventListener('error', e => devLog({ jsError: String(e.message), at: e.filename + ':' + e.lineno }));
+    window.addEventListener('unhandledrejection', e => devLog({ rejection: String(e.reason && (e.reason.message || e.reason)) }));
+    booted.then(ok => devLog({ boot: ok, emp: profile && profile.emp_no, admin: profile && profile.is_admin }));
+  }
   ready.then(() => {
+    devLog({ ready: true, admin: !!(profile && profile.is_admin) });
     if (!profile.is_admin) return;
-    db.doc('config/staff').onSnapshot(() => scheduleSync(), () => {});
+    db.doc('config/staff').onSnapshot(() => { devLog({ staffSnap: true }); scheduleSync(); }, e => devLog({ staffSnapErr: String(e && e.message) }));
   });
 })();
