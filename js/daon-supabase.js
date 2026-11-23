@@ -233,9 +233,10 @@
       if (!ok) return { ok: false, error: 'retired' };
       return { ok: true, mustChange: !!profile.must_change_pw, emp: profile.emp_no };
     },
-    /* 지금 비밀번호 확인 (개인정보 변경): 같은 계정으로 다시 로그인해 본다 */
+    /* 지금 비밀번호 확인 (개인정보 변경): 지금 로그인한 계정으로 다시 로그인해 본다 (아이디를 바꿨어도 맞게) */
     async verify(emp, pw) {
-      const { data, error } = await sb.auth.signInWithPassword({ email: emailOf(emp), password: pw });
+      const email = (session && session.user && session.user.email) || emailOf(emp);
+      const { data, error } = await sb.auth.signInWithPassword({ email, password: pw });
       return !error && !!data.session && (!session || data.session.user.id === session.user.id);
     },
     async changePassword(pw) {
@@ -274,6 +275,18 @@
         if (typeof toast === 'function') toast('직원 계정 맞추기 실패: ' + ((e && (e.message || e.details)) || e));
         return null;
       }
+    },
+    /* 관리자: 직원 로그인 아이디 목록 { 사번: 아이디 } (아이디를 안 정한 직원은 빠짐) */
+    async loginIds() {
+      const { data, error } = await sb.from('profiles').select('emp_no, login_id').not('login_id', 'is', null);
+      if (error) throw dbErr(error);
+      return Object.fromEntries((data || []).map(r => [r.emp_no, r.login_id]));
+    },
+    /* 관리자: 아이디 정하기 (빈 값이면 지우고 사번으로 돌림) → { ok, id } | { ok:false, error } */
+    async setLoginId(emp, id) {
+      const { data, error } = await sb.rpc('admin_set_login_id', { p_emp: emp, p_id: id || '' });
+      if (error) return { ok: false, error: error.message || '저장하지 못했습니다' };
+      return { ok: true, id: data };
     },
     async resetPassword(emp) { const { data, error } = await sb.rpc('admin_reset_password', { p_emp: emp }); return !error && data === true; },
     async changeEmp(o, n) { const { data, error } = await sb.rpc('admin_change_emp', { p_old: o, p_new: n }); if (error || data !== true) throw error || new Error('계정 없음'); return true; },

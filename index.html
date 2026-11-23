@@ -7259,7 +7259,7 @@ function managerAdmin(host, only) {
     if (b.dataset.mg === 'pwreset') {
       const emp = body.querySelector('[data-pwemp]').value, p = STAFF.find(s => s.empNo === emp);
       if (!p) { toast('초기화할 직원을 고르세요.'); return; }
-      confirmBox('비밀번호 초기화', `${esc(p.name)} ${esc(p.rank)}의 비밀번호를 초기 비밀번호(사번 ${esc(emp)})로 되돌릴까요?`, '초기화', () => run(() => auth.reset(emp), '초기화했습니다. 사번으로 로그인한 뒤 새 비밀번호를 정하면 됩니다.'));
+      confirmBox('비밀번호 초기화', `${esc(p.name)} ${esc(p.rank)}의 비밀번호를 초기 비밀번호(사번 ${esc(emp)})로 되돌릴까요?`, '초기화', () => run(() => auth.reset(emp), SUPA ? '초기화했습니다. 아이디와 초기 비밀번호(사번)로 로그인한 뒤 새 비밀번호를 정하면 됩니다.' : '초기화했습니다. 사번으로 로그인한 뒤 새 비밀번호를 정하면 됩니다.'));
     }
     if (b.dataset.mg === 'unlink') run(() => siteStore.linkAccount(id, ''), '계정 연결을 해제했습니다.');
     if (b.dataset.mg === 'link') {
@@ -8171,6 +8171,7 @@ const ADMIN_ITEMS = [
   ['cons', '공사관리', '현장 추가 · 현장명 · 전화 · 숨기기, 현장별 개요와 날짜별 기록 수정', h => adminSites(h)],
   ['sites', '현장 담당자', '공사관리 현장별 입력 담당자 지정', h => managerAdmin(h, 'sites')],
   ['acct', '계정 연결', 'claude.ai 계정과 직원 연결', h => managerAdmin(h, 'acct')],
+  ['ids', '로그인 아이디', '직원별 로그인 아이디 정하기 · 바꾸기 · 지우기 (로그인은 아이디로만 합니다)', h => loginIdAdmin(h)],
   ['pw', '비밀번호 초기화', '포털 로그인 비밀번호를 사번으로 되돌리기', h => managerAdmin(h, 'pw')],
   ['font', '화면 글씨체', '모든 직원 화면의 서체', h => managerAdmin(h, 'font')],
   ['admins', '관리자 지정', '관리자 페이지를 쓸 수 있는 사번', h => adminEmps(h)],
@@ -8181,7 +8182,7 @@ const ADMIN_GROUPS = [
   ['직원 · 급여', ['dept', 'staff', 'retired', 'duty', 'holi', 'pay', 'pin', 'otproxy', 'certdept']],
   ['전자결재', ['sign', 'reqline', 'line', 'rules', 'docs', 'trash']],
   ['공사관리', ['cons', 'sites']],
-  ['계정 · 보안', ['acct', 'pw', 'admins']],
+  ['계정 · 보안', ['acct', 'ids', 'pw', 'admins']],
   ['화면', ['font']],
 ];
 /* 결재 서명 관리: 직원별 서명 사진을 올리면 배경을 지워 결재란 크기로 만들고, 결재·문서보기·연봉계약서의 도장 자리에 쓴다 */
@@ -8258,6 +8259,51 @@ async function saveAdminEmps(emps) {
   if (siteStore.remote) await siteStore.remote.doc('config/admin').set({ emps, at: new Date().toISOString() });
   else localStorage.setItem('daon-admin-v1', JSON.stringify(emps));
   ADMIN_EMPS = emps; syncAdminUi(); renderLnb();
+}
+/* 로그인 아이디 (Supabase): 관리자만 정한다. 로그인은 아이디로만 하고, 아이디를 정하지 않은 직원은 사번이 곧 아이디 */
+function loginIdAdmin(host) {
+  if (!SUPA) { host.innerHTML = '<p class="se-note">로그인 아이디는 회사 서버(Supabase)로 열었을 때만 쓸 수 있습니다.</p>'; return; }
+  let ids = {}, q = '', loaded = false;
+  const ok = v => /^[a-z][a-z0-9._-]{3,19}$/.test(v);
+  const draw = () => {
+    const list = STAFF.filter(s => !q || `${s.name} ${s.rank} ${s.dept} ${s.empNo} ${ids[s.empNo] || ''}`.toLowerCase().includes(q));
+    host.innerHTML = `<div class="inline-row"><input class="field" data-q type="search" placeholder="이름 · 부서 · 사번 · 아이디 검색" value="${esc(q)}" aria-label="직원 검색" style="flex:1"></div>
+      <div class="table-wrap" style="margin-top:12px"><table class="grid"><thead><tr><th>직원</th><th style="width:110px">사번</th><th style="width:170px">지금 로그인 아이디</th><th style="width:290px">새 아이디</th></tr></thead><tbody>
+      ${!loaded ? '<tr><td colspan="4">불러오는 중입니다…</td></tr>' : list.map(s => { const cur = ids[s.empNo];
+        return `<tr><td>${esc(`${s.name} ${s.rank}`)} <small class="mg-wait">${esc(s.dept)}</small></td><td>${esc(s.empNo)}</td>
+          <td>${cur ? `<b>${esc(cur)}</b>` : `${esc(s.empNo)} <small class="mg-wait">미설정 · 사번</small>`}</td>
+          <td><div class="inline-row"><input class="field sm" data-id="${esc(s.empNo)}" maxlength="20" autocapitalize="off" spellcheck="false" placeholder="예: hong.gd" aria-label="${esc(s.name)} 새 아이디" style="flex:1">
+            <button class="btn sm primary" type="button" data-save="${esc(s.empNo)}">저장</button>${cur ? `<button class="btn sm" type="button" data-clear="${esc(s.empNo)}">지우기</button>` : ''}</div></td></tr>`; }).join('')}
+      </tbody></table></div>
+      <p class="se-note">아이디는 <b>영문 소문자로 시작</b>하고 영문 소문자 · 숫자 · <b>. _ -</b> 로 <b>4~20자</b>입니다. 아이디를 정하면 그 직원은 <b>사번으로는 로그인할 수 없고 아이디로만</b> 로그인합니다. 비밀번호는 그대로입니다.
+      아이디를 지우면 다시 사번이 아이디가 됩니다. 정한 아이디는 직원에게 직접 알려 주세요.</p>`;
+  };
+  const load = async () => { try { ids = await daonAuth.loginIds(); } catch (e) { toast('아이디 목록을 불러오지 못했습니다.'); } loaded = true; if (host.isConnected) draw(); };
+  const save = async (emp, v) => {
+    const s = STAFF.find(x => x.empNo === emp);
+    const r = await daonAuth.setLoginId(emp, v);
+    if (!r.ok) { toast(r.error); return; }
+    await load();
+    toast(v ? `${s ? s.name : emp}의 로그인 아이디를 '${r.id}'(으)로 정했습니다. 이제 이 아이디로만 로그인합니다.` : `${s ? s.name : emp}의 아이디를 지웠습니다. 사번으로 로그인합니다.`);
+  };
+  host.addEventListener('input', e => { if (e.target.matches('[data-q]')) { q = e.target.value.trim().toLowerCase(); const pos = e.target.selectionStart; draw(); const i = host.querySelector('[data-q]'); i.focus(); i.setSelectionRange(pos, pos); } });
+  host.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('[data-id]')) host.querySelector(`[data-save="${CSS.escape(e.target.dataset.id)}"]`)?.click(); });
+  host.addEventListener('click', e => {
+    const sv = e.target.closest('[data-save]'), cl = e.target.closest('[data-clear]');
+    if (sv) {
+      const emp = sv.dataset.save, v = host.querySelector(`[data-id="${CSS.escape(emp)}"]`).value.trim().toLowerCase();
+      if (!v) { toast('새 아이디를 입력하세요.'); return; }
+      if (!ok(v)) { toast('아이디는 영문 소문자로 시작하고 영문 · 숫자 · . _ - 4~20자로 정하세요.'); return; }
+      if (v === (ids[emp] || '')) { toast('지금 아이디와 같습니다.'); return; }
+      const s = STAFF.find(x => x.empNo === emp);
+      confirmBox('로그인 아이디 정하기', `${esc(s ? `${s.name} ${s.rank}` : emp)}의 로그인 아이디를 <b>${esc(v)}</b>(으)로 정할까요?<br>이제부터 ${ids[emp] ? `예전 아이디(${esc(ids[emp])})` : `사번(${esc(emp)})`}으로는 로그인할 수 없습니다.`, '정하기', () => save(emp, v));
+    }
+    if (cl) {
+      const emp = cl.dataset.clear, s = STAFF.find(x => x.empNo === emp);
+      confirmBox('아이디 지우기', `${esc(s ? `${s.name} ${s.rank}` : emp)}의 아이디(${esc(ids[emp])})를 지우고 사번(${esc(emp)})으로 로그인하게 할까요?`, '지우기', () => save(emp, ''));
+    }
+  });
+  draw(); load();
 }
 function adminEmps(host) {
   const draw = () => {
@@ -8920,7 +8966,7 @@ const auth = {
     el.className = 'login-screen';
     el.innerHTML = `<form class="login-card" novalidate aria-labelledby="lg-t">
         <div class="lg-logo">${LOGO_LOCKUP}</div><h1 id="lg-t">사내 포털 로그인</h1>
-        <div data-step="in"><label for="lg-emp">사번</label><input class="field" id="lg-emp" name="emp" inputmode="numeric" autocomplete="username" maxlength="12">
+        <div data-step="in"><label for="lg-emp">${SUPA ? '아이디' : '사번'}</label><input class="field" id="lg-emp" name="emp" ${SUPA ? 'autocapitalize="off" spellcheck="false"' : 'inputmode="numeric"'} autocomplete="username" maxlength="20">
           <label for="lg-pw">비밀번호</label><input class="field" id="lg-pw" name="pw" type="password" autocomplete="current-password"></div>
         <div data-step="new" hidden><p class="lg-note">처음 로그인했습니다. 사용할 새 비밀번호를 정하세요. (${PW_MIN}자 이상, 숫자만 써도 됩니다. 사번과 다르게)</p>
           <label for="lg-n1">새 비밀번호</label><input class="field" id="lg-n1" name="n1" type="password" autocomplete="new-password">
@@ -8928,7 +8974,7 @@ const auth = {
         <p class="lg-msg" role="alert"></p>
         <button class="btn primary" type="submit" data-login>로그인</button>
         <p class="lg-note" data-wait>회사 저장소에 연결하는 중입니다…</p>
-        <p class="lg-note">초기 비밀번호는 사번입니다. 사번을 모르거나 비밀번호를 잊으면 관리자에게 초기화를 요청하세요.</p></form>`;
+        <p class="lg-note">${SUPA ? '아이디는 관리자가 알려 드립니다. 초기 비밀번호는 사번입니다. 아이디를 모르거나 비밀번호를 잊으면 관리자에게 문의하세요.' : '초기 비밀번호는 사번입니다. 사번을 모르거나 비밀번호를 잊으면 관리자에게 초기화를 요청하세요.'}</p></form>`;
     document.body.appendChild(el);
     const f = el.querySelector('form'), msg = el.querySelector('.lg-msg'), v = n => f.elements[n].value.trim();
     let pending = null;   // 초기 비밀번호로 들어온 직원 (새 비밀번호 정하는 중)
@@ -8954,7 +9000,7 @@ const auth = {
         const r = await daonAuth.signIn(v('emp'), f.elements.pw.value);
         if (!r.ok) {
           btn.disabled = false;
-          msg.textContent = r.error === 'wrong' ? '사번 또는 비밀번호가 맞지 않습니다.' : r.error === 'retired' ? '퇴사 처리되었거나 사용이 중지된 계정입니다. 관리부에 문의하세요.' : '서버에 연결하지 못했습니다. 인터넷 연결을 확인하고 다시 누르세요.';
+          msg.textContent = r.error === 'wrong' ? '아이디 또는 비밀번호가 맞지 않습니다.' : r.error === 'retired' ? '퇴사 처리되었거나 사용이 중지된 계정입니다. 관리부에 문의하세요.' : '서버에 연결하지 못했습니다. 인터넷 연결을 확인하고 다시 누르세요.';
           f.elements.pw.select(); return;
         }
         await daonAuth.staffReady();
@@ -8979,7 +9025,7 @@ const auth = {
       }
       this.enter(p);
     };
-    this.prefill(siteStore.myEmp); this.paint();
+    if (!SUPA) this.prefill(siteStore.myEmp); this.paint();
     (f.elements.emp.value ? f.elements.pw : f.elements.emp).focus();
   },
   enter(p, quiet) {
