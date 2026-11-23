@@ -1941,7 +1941,7 @@ const postNoun = menu => (menu.id === 'notice' ? '공지' : '글');
 const PE_MAX_FILES = 10, PE_MAX_MB = 20;   // 공지 첨부 한도
 /* 첨부 저장: 게시 링크에서는 downloads 기능(보는 사람이 저장을 확인), 로컬 파일로 열면 일반 내려받기 */
 async function saveAttachment(x) {
-  if (!x?.blob && x?.asset) { try { const r = await fetch(window.DAON_BLOB ? DAON_BLOB(x.asset) : `/_blob/${x.asset}`); if (!r.ok) throw 0; x = { ...x, blob: await r.blob() }; } catch (e) { toast('첨부파일을 불러오지 못했습니다.'); return; } }
+  if (!x?.blob && x?.asset) { try { const b = window.DAON_BLOB_GET ? await DAON_BLOB_GET(x.asset) : await fetch(`/_blob/${x.asset}`).then(r => { if (!r.ok) throw 0; return r.blob(); }); x = { ...x, blob: b }; } catch (e) { toast('첨부파일을 불러오지 못했습니다.'); return; } }
   if (!x?.blob) { toast(x?.sid === undefined && !x?.asset ? '파일 내용이 없습니다. 예시 첨부이거나, 다른 브라우저에서 올린 파일입니다.' : '파일 내용이 없습니다.'); return; }
   const dl = window.claude?.use ? await window.claude.use('downloads').catch(() => null) : null;
   if (!dl) {
@@ -2962,7 +2962,7 @@ const photoStore = {
     for (let i = SITE_PHOTOS.length - 1; i >= 0; i--) if (SITE_PHOTOS[i].saved) SITE_PHOTOS.splice(i, 1);
     for (const list of Object.values(this.rows)) for (const r of list || []) {
       if (!r || !r.no || !r.date) continue;
-      SITE_PHOTOS.push({ ...r, id: PHOTO_SEQ++, saved: true, src: r.thumb || r.full, big: r.asset ? (window.DAON_BLOB ? DAON_BLOB(r.asset) : `/_blob/${r.asset}`) : r.full || r.thumb });
+      SITE_PHOTOS.push({ ...r, id: PHOTO_SEQ++, saved: true, src: r.thumb || r.full, big: r.asset ? (window.DAON_BLOB_URL ? '' : `/_blob/${r.asset}`) : r.full || r.thumb });   // 회사 서버: 크게 볼 때 임시 주소를 받는다 (photoViewer)
     }
     photoChanged();
   },
@@ -3005,6 +3005,7 @@ function photoViewer(list, idx) {
     m.el.querySelector('[data-pv]').innerHTML = `<img class="pv-img" src="${p.big || p.src}" alt="${esc(p.memo || p.cat)}">
       <div class="pv-info"><b>${esc(projLabel(p.no))}</b><span>${p.date} · ${esc(p.cat)} · ${esc(p.by)}</span>${p.memo ? `<p>${esc(p.memo)}</p>` : ''}<span class="crumb">${idx + 1} / ${list.length}</span></div>`;
     const im = m.el.querySelector('.pv-img'); im.onerror = () => { if (im.src !== p.src) im.src = p.src; };   // 원본을 못 받으면 미리보기로
+    if (p.asset && window.DAON_BLOB_URL) DAON_BLOB_URL(p.asset).then(u => { if (u && im.isConnected && list[idx] === p) im.src = u; }).catch(() => {});   // 비공개 저장소: 로그인한 상태로 원본 주소를 받아 바꾼다
     m.el.querySelector('[data-pvdel]').hidden = !photoStore.mine(p);
     m.el.querySelector('[data-pvp]').disabled = idx === 0;
     m.el.querySelector('[data-pvn]').disabled = idx === list.length - 1;

@@ -203,8 +203,22 @@
     },
     async delete(id) { await ready; const { error } = await sb.storage.from(CFG.bucket).remove([id]); if (error) throw dbErr(error); },
   };
-  // 앱이 '/_blob/<id>'로 부르던 파일 주소
-  window.DAON_BLOB = id => `${CFG.url}/storage/v1/object/public/${CFG.bucket}/${encodeURIComponent(id)}`;
+  // 앱이 '/_blob/<id>'로 부르던 파일: 저장소가 비공개라 로그인한 상태로만 받는다
+  window.DAON_BLOB_GET = async id => {   // 첨부 내려받기 → Blob
+    await ready;
+    const { data, error } = await sb.storage.from(CFG.bucket).download(id);
+    if (error) throw dbErr(error);
+    return data;
+  };
+  const signed = new Map();   // id → { url, until }
+  window.DAON_BLOB_URL = async id => {   // 사진 크게 보기 → 10분짜리 임시 주소
+    await ready;
+    const c = signed.get(id); if (c && c.until > Date.now()) return c.url;
+    const { data, error } = await sb.storage.from(CFG.bucket).createSignedUrl(id, 600);
+    if (error) throw dbErr(error);
+    signed.set(id, { url: data.signedUrl, until: Date.now() + 540000 });
+    return data.signedUrl;
+  };
 
   /* ---------- window.claude 흉내 ---------- */
   window.claude = {
@@ -260,7 +274,7 @@
     async syncEmployees() {
       if (!profile || !profile.is_admin) return null;
       try {
-        const staff = (typeof STAFF !== 'undefined' ? STAFF : []).filter(s => s.empNo).map(s => ({ emp: s.empNo, name: s.name }));
+        const staff = (typeof STAFF !== 'undefined' ? STAFF : []).filter(s => s.empNo).map(s => ({ emp: s.empNo, name: s.name, dept: s.dept || null }));
         const retired = (typeof RETIRED !== 'undefined' ? RETIRED : []).map(s => s.empNo).filter(Boolean);
         const { data, error } = await sb.rpc('admin_sync_employees', { p_staff: staff, p_retired: retired });
         if (error) throw error;
@@ -305,6 +319,15 @@
     window.addEventListener('unhandledrejection', e => devLog({ rejection: String(e.reason && (e.reason.message || e.reason)) }));
     booted.then(ok => devLog({ boot: ok, emp: profile && profile.emp_no, admin: profile && profile.is_admin }));
   }
+  /* 결재 문서는 관계자만 읽을 수 있어서, 문서번호가 겹치지 않게 회사 전체 번호 목록(번호만)을 받아 둔다 */
+  const pullDocNumbers = async () => {
+    try {
+      const { data, error } = await sb.rpc('appr_doc_numbers');
+      if (error || !Array.isArray(data) || typeof bumpSeq !== 'function') return;
+      data.forEach(r => { const no = typeof r === 'string' ? r : r && Object.values(r)[0]; if (no) bumpSeq(no); });
+    } catch (e) {}
+  };
+  ready.then(() => { pullDocNumbers(); setInterval(pullDocNumbers, 60000); });
   ready.then(() => {
     devLog({ ready: true, admin: !!(profile && profile.is_admin) });
     if (!profile.is_admin) return;
