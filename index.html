@@ -1790,7 +1790,7 @@ const COMM_SAMPLES = {   // [구분, 제목, 작성자] 예시
 const BOARD_CATS = { know: KNOW_CATS, comm: COMM_CATS };
 const boardCats = key => { const [m, b] = key.split('.'); return m === 'notice' ? NOTICE_CATS : BOARD_CATS[m]?.[b] || null; };
 const boardDefaultCat = key => { const [m, b] = key.split('.'); return m === 'notice' ? BOARD_CAT[b] || '일반' : BOARD_CATS[m]?.[b]?.[0] || ''; };
-const projLabel = no => { const p = PROJECTS.find(x => x[1] === no); return p ? `[${p[1]}] ${p[0]}` : '공통'; };
+const projLabel = no => (no && PJ_NAMES[no] ? `[${no}] ${PJ_NAMES[no]}` : '공통');
 /* HOME '전체공지' 위젯: 전체공지 글 + 다른 공지 게시판에 새로 쓴 글, 최신순 (새 글은 쓰자마자 맨 위) */
 function noticeFeed(n = 5) {
   const { menu, item } = findItem('notice.all');
@@ -2695,7 +2695,7 @@ Object.assign(RENDERERS, {
   /* 직원연락망: 부서·현장별 연락처 표 (사원검색과 같은 직원 목록) */
   contacts(pane, menu, item) {
     const groups = [...DEPTS, ...PROJECTS.map(([n, no]) => `site:${no}`)];
-    const gname = g => (g.startsWith('site:') ? `[현장] ${PROJECTS.find(p => p[1] === g.slice(5))[0]}` : g);
+    const gname = g => (g.startsWith('site:') ? `[현장] ${pjName(g.slice(5))}` : g);
     pane.innerHTML = head(menu, item) + `
       <form class="toolbar" data-cf>
         <select class="field" data-cg aria-label="부서·현장"><option value="">전체 부서</option>${groups.map(g => `<option value="${esc(g)}">${esc(gname(g))}</option>`).join('')}</select>
@@ -3051,7 +3051,7 @@ const photoStore = {
   },
 };
 const uploadSites = () => PROJECTS.filter(([, no]) => canUploadPhoto(no));
-const siteShort = no => (PROJECTS.find(p => p[1] === no)?.[0] || no).split(' ')[0];
+const siteShort = no => (pjName(no)).split(' ')[0];
 const photoViews = new Set();
 function photoChanged() {
   photoViews.forEach(p => (p.isConnected ? p.photoRefresh() : photoViews.delete(p)));
@@ -3619,7 +3619,7 @@ const SITE_STAFF = {
   'P-2025-087': { tel: '043-213-5530', staff: [['엄태식', '현장소장'], ['진가람', '공무'], ['석민규', '안전관리자']] },
 };
 /* 이 사람이 배치된 현장 { no, name, role } (없으면 null) */
-const siteOf = n => { for (const [no, s] of Object.entries(SITE_STAFF)) { const hit = s.staff.find(x => x[0] === n); if (hit) return { no, name: PROJECTS.find(p => p[1] === no)?.[0] || no, role: hit[1] }; } return null; };
+const siteOf = n => { for (const [no, s] of Object.entries(SITE_STAFF)) { const hit = s.staff.find(x => x[0] === n); if (hit) return { no, name: pjName(no), role: hit[1] }; } return null; };
 const siteMembers = no => (SITE_STAFF[no]?.staff || []).map(([n]) => person(n)).filter(Boolean);
 /* 직원 선택 목록의 두 번째 칸: 부서 (현장 배치면 현장명·직책도) */
 const SITE_ROOT = '공사현장';
@@ -3636,6 +3636,9 @@ const PROJECTS = [   // [사업명, 사업번호] 예시
   ['신흥동 3가7-314 오피스텔 신축공사', 'P-2026-021'],
   ['청원구 사천동 근린생활시설 신축공사', 'P-2025-087'],
 ];
+/* 사업번호 → 현장명 (목록에서 빠진 준공 · 숨김 현장도 이름은 남긴다: 지난 기록 · 문서 표시용) */
+const PJ_NAMES = Object.fromEntries(PROJECTS.map(([n, no]) => [no, n]));
+const pjName = no => PJ_NAMES[no] || no;
 const CARS = [['12가 3456', '쏘나타 (관리부)'], ['34나 7890', '스타리아 (건축설계팀)'], ['56다 1234', '포터 (현장지원팀)']];   // 회사차량 예시
 /* 정산서 '신청서 가져오기'용 예시 신청서 */
 const SAMPLE_TRIP_REQS = [{
@@ -6139,7 +6142,7 @@ function siteWidgets(pane) {
   const el = { ov: pane.querySelector('#w-proj'), work: pane.querySelector('#w-work'), att: pane.querySelector('#w-att'), deploy: pane.querySelector('#w-deploy'), equip: pane.querySelector('#w-equip') };
   let no = PROJECTS[0][1];
   try { const s = localStorage.getItem('daon-site-proj'); if (PROJECTS.some(p => p[1] === s)) no = s; } catch (e) {}
-  const pname = () => PROJECTS.find(p => p[1] === no)[0];
+  const pname = () => pjName(no);
   const more = part => `<button class="icon-btn" type="button" data-open="${DAILY_KEY[part]}" aria-label="${HOME_TITLE[part]} 열기" title="공사관리에서 보기·입력"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 8v8M8 12h8"/></svg></button>`;
   const staleTag = h => h && h.date !== ymd(today) ? `<span class="att-date stale">오늘 미입력 · 최근 ${mmdd(h.date)}</span>` : '';
   const empty = part => `<p class="w-empty">공사관리에서 입력한 ${HOME_TITLE[part]} 기록이 없습니다.</p>`;
@@ -6380,7 +6383,7 @@ NOTE_PARTS.forEach(k => {
 });
 
 function siteEditors(no) {
-  const pname = () => PROJECTS.find(p => p[1] === no)[0];
+  const pname = () => pjName(no);
   const SAVED = { shared: '저장했습니다. 공용 저장소에 반영되어 다른 직원도 같은 값을 봅니다.', local: '저장했습니다. (로컬 파일: 이 브라우저에만 저장)',
     fail: '저장하지 못했습니다. 잠시 후 다시 시도하세요.', ro: '이 링크에서는 수정 권한이 없어 저장하지 못했습니다.', deny: '이 현장의 담당자가 아니라 저장하지 못했습니다.' };
   const saved = p => Promise.resolve(p).then(r => { toast(SAVED[r] || SAVED.fail); if (r !== 'shared' && r !== 'local') siteChanged(); });
@@ -6491,7 +6494,7 @@ const histHtml = part => { const V = DAY_VIEW[part];
       <div class="table-wrap"><table class="grid hist-grid"><thead><tr><th class="c" style="width:150px">기준일</th>${V.head.map(h => `<th class="r">${h}</th>`).join('')}<th class="c" style="width:110px">저장</th></tr></thead><tbody></tbody></table></div>
       <p class="se-note">날짜를 누르면 그날 ${V.detail ? '자세한 내용을 볼 수 있습니다' : '기록을 고칠 수 있습니다'}. 오늘 것은 [오늘 입력]으로 넣습니다.</p>`; };
 function siteHistory(no, part) {
-  const name = PROJECTS.find(p => p[1] === no)[0];
+  const name = pjName(no);
   const m = modal(`${DAILY[part]} 기록 · ${name}`, histHtml(part),
     '<button class="btn" type="button" data-close>닫기</button><button class="btn primary" type="button" data-today>오늘 입력</button>', 'wide');
   m.el.querySelector('.dialog-body').style.maxHeight = '72vh';
@@ -6700,7 +6703,7 @@ function workerPage(no, date = ymd(today)) {
   const tabId = `cons.workers.${no}`, open = tabs.find(t => t.id === tabId);
   lnbReveal(no);
   if (open) { activate(tabId); open.pane.wkSetDate(date); return; }
-  const pname = PROJECTS.find(p => p[1] === no)[0];
+  const pname = pjName(no);
   addTab(tabId, `투입 인원 · ${siteShort(no)}`, pane => {
     let cur = date, view = 'day', q = '';
     pane.innerHTML = `<div class="wk-page">
@@ -6894,7 +6897,7 @@ function workerPage(no, date = ymd(today)) {
 
 /* 투입 인원 엑셀: ① 그날 투입 인원 ② 그 달 출역표(날짜별 ○) ③ 전체 명단(누적 근로일수) */
 function workerExcel(no, date) {
-  const pname = PROJECTS.find(p => p[1] === no)[0], roster = workerStore.roster(no), map = workerStore.dayMap(no), month = date.slice(0, 7);
+  const pname = pjName(no), roster = workerStore.roster(no), map = workerStore.dayMap(no), month = date.slice(0, 7);
   const sort = l => l.sort((a, b) => (a.crew || '').localeCompare(b.crew || '', 'ko') || a.name.localeCompare(b.name, 'ko'));
   const sub = x => `현장: [${no}] ${pname}  ·  ${x}  ·  출력: ${ME.name} ${ME.rank} ${new Date().toLocaleString('ko-KR')}`;
   const person = [{ h: '이름', w: 10, t: 'c' }, { h: '구분', w: 8, t: 'c' }, { h: '국적', w: 9, t: 'c' }, { h: '주민/외국인등록번호', w: 20, t: 'c' }, { h: '여권번호', w: 12, t: 'c' }, { h: '전화번호', w: 14, t: 'c' }, { h: '주소', w: 34, t: 's' }, { h: '소속업체', w: 18, t: 's' }, { h: '직종', w: 10, t: 'c' }];
@@ -7128,7 +7131,7 @@ function siteExcelSheets(parts, nos, from, to) {
   const pad = n => String(n).padStart(2, '0');
   const at = iso => { if (!iso) return ''; const d = new Date(iso); return isNaN(d) ? '' : `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
   const by = id => !id ? '' : id === siteStore.me ? `${ME.name} ${ME.rank}` : siteStore.who(id);
-  const pname = no => PROJECTS.find(p => p[1] === no)[0];
+  const pname = no => pjName(no);
   const recs = part => nos.flatMap(no => siteStore.history(no, part).filter(h => h.date >= from && h.date <= to).map(h => ({ ...h, no })))
     .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : nos.indexOf(a.no) - nos.indexOf(b.no));
   const now = new Date(), sub = extra => `현장: ${nos.length === PROJECTS.length ? `전체 현장 (${nos.length}곳)` : nos.map(no => `[${no}] ${pname(no)}`).join(', ')}  ·  기간: ${dot(from)} ~ ${dot(to)}  ·  출력: ${ME.name} ${ME.rank} ${at(now.toISOString())}${extra ? `  ·  ${extra}` : ''}`;
@@ -7877,7 +7880,7 @@ function setPerson(p, v) {
   if (siteNo) {
     const role = v.duty && SITE_ROLES.includes(v.duty) ? v.duty : v.duty || '기타';
     SITE_STAFF[siteNo].staff.push([p.name, role, 'cfg']);
-    Object.assign(p, { siteNo, siteName: PROJECTS.find(x => x[1] === siteNo)?.[0] || siteNo, siteRole: role, siteTel: SITE_STAFF[siteNo].tel });
+    Object.assign(p, { siteNo, siteName: pjName(siteNo), siteRole: role, siteTel: SITE_STAFF[siteNo].tel });
   }
   p.duty = v.duty || (siteNo ? p.siteRole : defaultDuty(v.rank, v.dept));
   syncPersonRefs(p.name, v.rank, v.dept);
@@ -7909,7 +7912,7 @@ function applyStaffConfig(cfg) {
     const p = { name: a.name, empNo: a.empNo, added: true, email: '', mobile: '', ext: DEPT_TEL[a.dept] || '' };
     STAFF.push(p); setPerson(p, { ...a, duty: a.duty || a.siteRole });
   }
-  STAFF.forEach(s => { if (s.siteNo) Object.assign(s, { siteName: PROJECTS.find(x => x[1] === s.siteNo)?.[0] || s.siteName, siteTel: SITE_STAFF[s.siteNo]?.tel || s.siteTel }); });   // 현장명 · 전화가 바뀌었을 수 있다
+  STAFF.forEach(s => { if (s.siteNo) Object.assign(s, { siteName: PJ_NAMES[s.siteNo] || s.siteName, siteTel: SITE_STAFF[s.siteNo]?.tel || s.siteTel }); });   // 현장명 · 전화가 바뀌었을 수 있다
   staffSort();
   // 퇴사자 나누기: 재직 명단 · 현장 배치에서 빼고, 결재자 찾기(ORG)에는 표시만 남긴다(지난 문서의 이름 · 직위가 보이게)
   for (let i = STAFF.length - 1; i >= 0; i--) if (isOut(STAFF[i]) && STAFF[i].name !== ME.name) RETIRED.unshift(...STAFF.splice(i, 1));
@@ -7935,13 +7938,17 @@ function applyStaffConfig(cfg) {
    숨긴 현장은 공사관리 · HOME · 결재 사업 선택에서 빠지고, 입력해 둔 기록은 저장소에 그대로 남는다 */
 const PROJ_KEY = 'daon-proj-v1';
 const PROJ_BASE = PROJECTS.map(([name, no]) => ({ no, name, tel: SITE_STAFF[no]?.tel || '', dept: (SITE_DEPTS.find(([, n]) => n === no) || [])[0] || '' }));
-let projCfg = { list: [], edits: {}, hidden: [] };
+/* 준공현장: done = { 사업번호: { date: 준공일, memo, by, at } }. 준공 처리한 현장은 숨긴 현장처럼 공사관리 · HOME · 사업 선택에서 빠지고
+   관리자 › 공사관리 › 준공현장에서 개요 · 날짜별 기록을 그대로 볼 수 있다. [진행으로 되돌리기]로 언제든 되돌린다 */
+let projCfg = { list: [], edits: {}, hidden: [], done: {} };
 const allProjects = () => [...PROJ_BASE.map(p => ({ ...p, base: true })), ...projCfg.list.filter(x => !PROJ_BASE.some(b => b.no === x.no))]
-  .map(p => ({ ...p, name: projCfg.edits[p.no]?.name || p.name, tel: projCfg.edits[p.no]?.tel ?? p.tel, hidden: projCfg.hidden.includes(p.no) }));
+  .map(p => ({ ...p, name: projCfg.edits[p.no]?.name || p.name, tel: projCfg.edits[p.no]?.tel ?? p.tel, hidden: projCfg.hidden.includes(p.no), done: projCfg.done[p.no] || null }));
 function applyProjects(c) {
-  projCfg = { list: Array.isArray(c?.list) ? c.list.filter(x => x && x.no && x.name) : [], edits: c?.edits && typeof c.edits === 'object' ? c.edits : {}, hidden: Array.isArray(c?.hidden) ? c.hidden : [] };
+  projCfg = { list: Array.isArray(c?.list) ? c.list.filter(x => x && x.no && x.name) : [], edits: c?.edits && typeof c.edits === 'object' ? c.edits : {}, hidden: Array.isArray(c?.hidden) ? c.hidden : [],
+    done: c?.done && typeof c.done === 'object' && !Array.isArray(c.done) ? c.done : {} };
   const all = allProjects();
-  PROJECTS.splice(0, PROJECTS.length, ...all.filter(p => !p.hidden).map(p => [p.name, p.no]));
+  for (const p of all) PJ_NAMES[p.no] = p.name;
+  PROJECTS.splice(0, PROJECTS.length, ...all.filter(p => !p.hidden && !p.done).map(p => [p.name, p.no]));
   for (const p of all) {
     if (!SITE_STAFF[p.no]) SITE_STAFF[p.no] = { tel: p.tel || '', staff: [] }; else SITE_STAFF[p.no].tel = p.tel || '';
     if (!SITE_DEFAULTS[p.no]) SITE_DEFAULTS[p.no] = { ov: { client: '', start: '', end: '', amount: 0, summary: '', addr: '', plan: 0, actual: 0 } };
@@ -7951,7 +7958,7 @@ function applyProjects(c) {
   siteChanged();
 }
 async function saveProjects(c) {
-  const cfg = { list: c.list, edits: c.edits, hidden: c.hidden, at: new Date().toISOString() };
+  const cfg = { list: c.list, edits: c.edits, hidden: c.hidden, done: c.done || {}, at: new Date().toISOString() };
   if (siteStore.remote) await siteStore.remote.doc('config/projects').set(cfg);
   else localStorage.setItem(PROJ_KEY, JSON.stringify(cfg));
   applyProjects(cfg);
@@ -7989,25 +7996,82 @@ function projectEditor(done, p) {
 function adminSites(host) {
   host.innerHTML = `<div class="inline-row"><span class="crumb" style="flex:1">전체 관리자는 모든 현장의 개요와 날짜별 기록을 입력 · 수정할 수 있습니다.</span><button class="btn primary" type="button" data-add>현장 추가</button></div>
     <div class="table-wrap" style="margin-top:10px"><table class="grid"><thead><tr><th>사업번호</th><th>현장명</th><th>현장 부서</th><th>전화</th><th class="c">배치 · 담당</th><th class="c">관리</th></tr></thead><tbody></tbody></table></div>
-    <p class="se-note">[개요]: 발주처 · 공기 · 계약금액 · 공정률 · 현장주소. [기록]: 현장근무 · 인력투입 · 장비투입 · 장비 점검의 날짜별 기록을 보고 아무 날짜나 고칩니다. 현장 담당자 지정은 왼쪽 '현장 담당자'에서 합니다.</p>`;
+    <p class="se-note">[개요]: 발주처 · 공기 · 계약금액 · 공정률 · 현장주소. [기록]: 현장근무 · 인력투입 · 장비투입 · 장비 점검의 날짜별 기록을 보고 아무 날짜나 고칩니다. 현장 담당자 지정은 왼쪽 '현장 담당자'에서 합니다.
+      [준공]: 준공이 끝난 현장을 '준공현장'으로 옮깁니다 (공사관리 · HOME · 사업 선택 목록에서 빠지고, 기록은 그대로 남습니다). <span data-donecnt></span></p>`;
   const tb = host.querySelector('tbody');
   const draw = () => {
-    tb.innerHTML = allProjects().map(p => `<tr${p.hidden ? ' style="opacity:.55"' : ''}><td class="num">${esc(p.no)}</td><td class="title">${esc(p.name)}${p.hidden ? ' <span class="mine-tag">숨김</span>' : ''}${p.base ? '' : ' <span class="mine-tag">추가</span>'}</td>
+    const live = allProjects().filter(p => !p.done), nDone = allProjects().length - live.length;
+    host.querySelector('[data-donecnt]').innerHTML = nDone ? `준공 처리한 현장 ${nDone}곳은 <button class="linkish" type="button" data-admgo="done">준공현장</button>에 있습니다.` : '';
+    tb.innerHTML = live.map(p => `<tr${p.hidden ? ' style="opacity:.55"' : ''}><td class="num">${esc(p.no)}</td><td class="title">${esc(p.name)}${p.hidden ? ' <span class="mine-tag">숨김</span>' : ''}${p.base ? '' : ' <span class="mine-tag">추가</span>'}${endPassed(p.no) ? ' <span class="mine-tag" title="준공(예정)일이 지났습니다. 준공이 끝났으면 [준공]을 누르세요">준공예정일 지남</span>' : ''}</td>
       <td>${esc(p.dept || '-')}</td><td class="num">${esc(p.tel || '-')}</td><td class="c">${(SITE_STAFF[p.no]?.staff || []).length}명 · ${siteStore.mgrKeys(p.no).length}명</td>
       <td class="c" style="white-space:nowrap"><button class="btn sm" type="button" data-edit="${esc(p.no)}">수정</button> <button class="btn sm" type="button" data-ov="${esc(p.no)}" ${p.hidden ? 'disabled' : ''}>개요</button>
         <select class="field sm" data-hist="${esc(p.no)}" aria-label="${esc(p.name)} 기록 보기" ${p.hidden ? 'disabled' : ''}><option value="">기록…</option>${Object.entries(DAILY).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
-        <button class="btn sm" type="button" data-hide="${esc(p.no)}">${p.hidden ? '다시 보이기' : '숨기기'}</button></td></tr>`).join('');
+        <button class="btn sm" type="button" data-hide="${esc(p.no)}">${p.hidden ? '다시 보이기' : '숨기기'}</button> <button class="btn sm" type="button" data-done="${esc(p.no)}">준공</button></td></tr>`).join('') || '<tr><td colspan="6" class="c crumb">진행 중인 현장이 없습니다.</td></tr>';
   };
   host.querySelector('[data-add]').onclick = () => projectEditor(draw);
   tb.addEventListener('click', async e => {
-    const b = e.target.closest('button'); if (!b) return; const d = b.dataset, p = allProjects().find(x => x.no === (d.edit || d.ov || d.hide));
+    const b = e.target.closest('button'); if (!b) return; const d = b.dataset, p = allProjects().find(x => x.no === (d.edit || d.ov || d.hide || d.done));
     if (!p) return;
+    if (d.done) completeSite(p, draw);
     if (d.edit) projectEditor(draw, p);
     if (d.ov) siteEditors(p.no).ov();
     if (d.hide) {
       const go = async () => { try { await saveProjects({ ...projCfg, hidden: p.hidden ? projCfg.hidden.filter(x => x !== p.no) : [...projCfg.hidden, p.no] }); } catch (er) { toast('저장하지 못했습니다.'); return; } draw(); toast(p.hidden ? '다시 보이게 했습니다.' : '숨겼습니다. 기록은 그대로 남습니다.'); };
       if (p.hidden) go(); else confirmBox('현장 숨기기', `<b>${esc(p.name)}</b>을(를) 공사관리 · HOME · 사업 선택 목록에서 숨길까요?<br>입력해 둔 기록과 직원 배치는 그대로 남고, 언제든 다시 보이게 할 수 있습니다.`, '숨기기', go);
     }
+  });
+  tb.addEventListener('change', e => { const s = e.target.closest('[data-hist]'); if (s && s.value) { siteHistory(s.dataset.hist, s.value); s.value = ''; } });
+  onSiteChange(host, draw);
+  draw();
+}
+/* 준공(예정)일이 지났나 (공사관리 목록에 '준공예정일 지남' 표시) */
+const endPassed = no => { const e = siteStore.get(no)?.ov?.end; return !!e && e < ymd(today); };
+/* [준공] 처리 창: 준공일 · 메모를 받아 준공현장으로 옮긴다 */
+function completeSite(p, done) {
+  const end = siteStore.get(p.no)?.ov?.end || '', def = end && end <= ymd(today) ? end : ymd(today);
+  const m = modal(`준공 처리 · ${p.no}`, `<div class="form">
+      ${frow('현장', `<input class="field" value="${esc(p.name)}" readonly>`)}
+      ${frow('준공일', `<input class="field" type="date" name="date" value="${def}" max="${ymd(today)}">`)}
+      ${frow('메모', '<input class="field" name="memo" placeholder="예: 사용승인 완료, 하자보수 기간 2년" autocomplete="off">')}
+    </div><p class="se-note">준공현장으로 옮기면 공사관리 메뉴 · HOME · 결재 사업 선택 목록에서 빠집니다. 입력해 둔 개요 · 날짜별 기록 · 현장사진은 그대로 남고,
+      관리자 › 공사관리 › 준공현장에서 볼 수 있으며 언제든 진행으로 되돌릴 수 있습니다.${(SITE_STAFF[p.no]?.staff || []).length ? `<br><b>이 현장에 배치된 직원 ${SITE_STAFF[p.no].staff.length}명</b>은 직원 관리에서 다른 부서 · 현장으로 옮겨 주세요.` : ''}</p>`,
+    '<button class="btn" type="button" data-close>취소</button><button class="btn primary" type="button" data-ok>준공 처리</button>');
+  m.el.querySelector('[data-ok]').onclick = async () => {
+    const date = m.el.querySelector('[name="date"]').value, memo = m.el.querySelector('[name="memo"]').value.trim();
+    if (!date) { toast('준공일을 입력하세요.'); return; }
+    try { await saveProjects({ ...projCfg, done: { ...projCfg.done, [p.no]: { date, memo, by: ME.name, at: new Date().toISOString() } } }); }
+    catch (e) { toast('저장하지 못했습니다. 잠시 후 다시 시도하세요.'); return; }
+    m.close(); toast(`${p.name}을(를) 준공현장으로 옮겼습니다.`); done?.();
+  };
+}
+/* 관리자 › 공사관리 › 준공현장: 준공 처리한 현장 목록 (준공일 최근 순) */
+function adminDone(host) {
+  host.innerHTML = `<div class="toolbar"><input class="field" type="search" data-dq placeholder="현장명 · 사업번호 검색" aria-label="검색어"><span class="spacer"></span><span class="crumb" data-dsum></span></div>
+    <div class="table-wrap" style="margin-top:10px"><table class="grid"><thead><tr><th>사업번호</th><th>현장명</th><th>발주처</th><th class="c">공사기간</th><th class="r">계약금액(원)</th><th class="c">준공일</th><th>메모</th><th class="c">관리</th></tr></thead><tbody></tbody></table></div>
+    <p class="se-note">진행 중인 현장을 준공현장으로 옮기려면 '공사관리'에서 그 현장의 [준공]을 누릅니다. [진행으로 되돌리기]를 누르면 다시 공사관리 · HOME 목록에 나옵니다.</p>`;
+  const tb = host.querySelector('tbody'), q = host.querySelector('[data-dq]');
+  const dot = d => (d || '').replace(/-/g, '.');
+  const draw = () => {
+    const k = q.value.trim().toLowerCase();
+    const rows = allProjects().filter(p => p.done && (!k || `${p.no} ${p.name}`.toLowerCase().includes(k))).sort((a, b) => (b.done.date || '').localeCompare(a.done.date || ''));
+    host.querySelector('[data-dsum]').textContent = `준공현장 ${allProjects().filter(p => p.done).length}곳`;
+    tb.innerHTML = rows.map(p => { const o = siteStore.get(p.no)?.ov || {};
+      return `<tr><td class="num">${esc(p.no)}</td><td class="title">${esc(p.name)}</td><td>${esc(o.client || '-')}</td><td class="c num">${o.start ? `${dot(o.start)} ~ ${dot(o.end)}` : '-'}</td>
+        <td class="r num">${o.amount ? Number(o.amount).toLocaleString() : '-'}</td><td class="c num"><b>${dot(p.done.date)}</b></td><td>${esc(p.done.memo || '')}<span class="crumb">${p.done.by ? ` · ${esc(p.done.by)} 처리` : ''}</span></td>
+        <td class="c" style="white-space:nowrap"><button class="btn sm" type="button" data-ov="${esc(p.no)}">개요</button>
+          <select class="field sm" data-hist="${esc(p.no)}" aria-label="${esc(p.name)} 기록 보기"><option value="">기록…</option>${Object.entries(DAILY).map(([kk, l]) => `<option value="${kk}">${l}</option>`).join('')}</select>
+          <button class="btn sm" type="button" data-undo="${esc(p.no)}">진행으로 되돌리기</button></td></tr>`; }).join('')
+      || `<tr><td colspan="8" class="c crumb">${k ? '찾는 현장이 없습니다.' : '준공 처리한 현장이 없습니다.'}</td></tr>`;
+  };
+  q.addEventListener('input', draw);
+  tb.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return; const d = b.dataset, p = allProjects().find(x => x.no === (d.ov || d.undo)); if (!p) return;
+    if (d.ov) siteEditors(p.no).ov();
+    if (d.undo) confirmBox('진행으로 되돌리기', `<b>${esc(p.name)}</b>을(를) 진행 중인 현장으로 되돌릴까요?<br>공사관리 · HOME · 결재 사업 선택 목록에 다시 나옵니다.`, '되돌리기', async () => {
+      const next = { ...projCfg.done }; delete next[p.no];
+      try { await saveProjects({ ...projCfg, done: next }); } catch (er) { toast('저장하지 못했습니다.'); return; }
+      draw(); toast('진행 중인 현장으로 되돌렸습니다.');
+    });
   });
   tb.addEventListener('change', e => { const s = e.target.closest('[data-hist]'); if (s && s.value) { siteHistory(s.dataset.hist, s.value); s.value = ''; } });
   onSiteChange(host, draw);
@@ -8238,6 +8302,7 @@ const ADMIN_ITEMS = [
   ['docs', '결재 문서', '회사의 모든 결재 문서 보기 · 내용 수정 · 삭제', h => adminDocs(h)],
   ['trash', '임시저장소', '삭제한 결재 문서 복원 · 완전 삭제', h => adminTrash(h)],
   ['cons', '공사관리', '현장 추가 · 현장명 · 전화 · 숨기기, 현장별 개요와 날짜별 기록 수정', h => adminSites(h)],
+  ['done', '준공현장', '준공 처리한 현장 목록 · 개요와 날짜별 기록 보기 · 진행으로 되돌리기', h => adminDone(h)],
   ['sites', '현장 담당자', '공사관리 현장별 입력 담당자 지정', h => managerAdmin(h, 'sites')],
   ['acct', '계정 연결', 'claude.ai 계정과 직원 연결', h => managerAdmin(h, 'acct')],
   ['ids', '로그인 아이디', '직원별 로그인 아이디 정하기 · 바꾸기 · 지우기 (로그인은 아이디로만 합니다)', h => loginIdAdmin(h)],
@@ -8250,7 +8315,7 @@ const ADMIN_GROUPS = [
   ['', ['home']],
   ['직원 · 급여', ['dept', 'staff', 'retired', 'duty', 'holi', 'pay', 'pin', 'otproxy', 'certdept']],
   ['전자결재', ['sign', 'reqline', 'line', 'rules', 'docs', 'trash']],
-  ['공사관리', ['cons', 'sites']],
+  ['공사관리', ['cons', 'done', 'sites']],
   ['계정 · 보안', ['acct', 'ids', 'pw', 'admins']],
   ['화면', ['font']],
 ];
@@ -8426,7 +8491,7 @@ function adminHome(host) {
     ${card('reqline', '요청부서 결재선', Object.keys(APPR_CFG.req).length ? `직접 정한 부서 ${Object.keys(APPR_CFG.req).length}곳<br>${Object.entries(APPR_CFG.req).slice(0, 3).map(([d, ns]) => `${esc(d)}: ${ns.map(esc).join(' › ') || '없음'}`).join('<br>')}` : '정한 부서 없음 · 기안자가 직접 넣음')}
     ${card('line', '고정 결재선',`기본: ${chain(APPR_CFG.mgmt)}${Object.keys(APPR_CFG.forms).length ? `<br>양식별 ${Object.keys(APPR_CFG.forms).length}개 따로 정함` : ''}`)}
     ${card('docs', '결재 문서', `진행 <b>${st('진행')}</b> · 반려 ${st('반려')} · 완료 ${st('완료')}`)}
-    ${card('cons', '공사현장', `표시 <b>${PROJECTS.length}</b>곳${projCfg.hidden.length ? ` · 숨김 ${projCfg.hidden.length}곳` : ''}${projCfg.list.length ? ` · 추가 ${projCfg.list.length}곳` : ''}`)}
+    ${card('cons', '공사현장', `표시 <b>${PROJECTS.length}</b>곳${projCfg.hidden.length ? ` · 숨김 ${projCfg.hidden.length}곳` : ''}${projCfg.list.length ? ` · 추가 ${projCfg.list.length}곳` : ''}${Object.keys(projCfg.done).length ? ` · 준공 ${Object.keys(projCfg.done).length}곳` : ''}`)}
     ${card('sites', '현장 담당자', PROJECTS.map(([n, no]) => `${esc(no)}: ${siteStore.mgrKeys(no).length}명`).join('<br>'))}
     ${card('acct', '계정 연결', `직원 계정 ${Object.keys(siteStore.requests).filter(id => id !== siteStore.me).length}개 · 연결됨 ${Object.entries(siteStore.requests).filter(([id, r]) => id !== siteStore.me && r.emp).length}개`)}
     ${card('pw', '로그인 비밀번호', `비밀번호를 정한 직원 ${STAFF.filter(s => auth.recOf(s.empNo)).length}명 / ${STAFF.length}명`)}
@@ -8945,7 +9010,7 @@ document.getElementById('btn-people').onclick = () => addTab('people', '임·직
   const showNode = n => {
     node = n; drawTree();
     if (n === SITE_ROOT) { showList(STAFF.filter(s => s.siteNo), '공사현장 전체', true); return; }
-    if (n.startsWith('site:')) { const no = n.slice(5); showList(STAFF.filter(s => s.siteNo === no), `[${no}] ${PROJECTS.find(p => p[1] === no)[0]}`, true); return; }
+    if (n.startsWith('site:')) { const no = n.slice(5); showList(STAFF.filter(s => s.siteNo === no), `[${no}] ${pjName(no)}`, true); return; }
     showList(STAFF.filter(s => deptsUnder(n).includes(s.dept)), n);
   };
   const setTab = t => {
@@ -9163,7 +9228,7 @@ const staffOpts = (v, withOut) => {
     + (withOut ? grp('퇴사자', RETIRED.slice().sort((a, b) => (b.out || '').localeCompare(a.out || ''))) : '');   // 증명서 발급: 퇴사자도 고른다
 };
 const projOpts = v => `<option value="">사업 선택</option>${PROJECTS.map(([n, no]) => `<option value="${no}" ${no === v ? 'selected' : ''}>[${no}] ${esc(n)}</option>`).join('')}<option value="HQ" ${v === 'HQ' ? 'selected' : ''}>본사 (공통)</option>`;
-const projName = no => no === 'HQ' ? '본사 (공통)' : PROJECTS.find(p => p[1] === no)?.[0] || '-';
+const projName = no => no === 'HQ' ? '본사 (공통)' : PJ_NAMES[no] || '-';
 const frow = (l, h) => `<div class="form-row"><label>${l}</label><div class="inline">${h}</div></div>`;
 const inRange = (d, f, t) => (!f || d >= f) && (!t || d <= t);
 /* 작성일자 기간 버튼 (원본: 전체 · 오늘 · 1주 · 1개월 · 6개월 · 1년) */
