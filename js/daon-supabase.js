@@ -31,29 +31,19 @@
   /* ---------- 자동 로그아웃: 마지막으로 마우스 · 키보드를 쓴 뒤 IDLE_MIN 분이 지나면 ----------
      마지막 사용 시각은 localStorage에 두어 여러 탭이 같이 쓰고, 컴퓨터를 껐다 켜서 크롬이 탭을 되살려도
      (sessionStorage 로그인이 복원돼도) 시작할 때 오래됐으면 로그아웃한다 */
-  const IDLE_MIN = Number(CFG.idleMinutes) || 30, IDLE_MS = IDLE_MIN * 60000, LAST_KEY = 'daon-erp-last', OUT_FLAG = 'daon-erp-idle-out';
+  const IDLE_MIN = Number(CFG.idleMinutes) || 30, IDLE_MS = IDLE_MIN * 60000, LAST_KEY = 'daon-erp-last';
   const lastUse = () => { try { return Number(localStorage.getItem(LAST_KEY)) || 0; } catch (e) { return 0; } };
   let stampAt = 0;
   const stamp = (force) => { const n = Date.now(); if (!force && n - stampAt < 15000) return; stampAt = n; try { localStorage.setItem(LAST_KEY, String(n)); } catch (e) {} };
   ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'].forEach(t => window.addEventListener(t, () => { if (session) stamp(); }, { passive: true, capture: true }));
-  let warned = false;
+  // 알림 없이 조용히 로그아웃하고 로그인 화면으로
   async function idleOut() {
-    try { sessionStorage.setItem(OUT_FLAG, '1'); } catch (e) {}
     try { await sb.auth.signOut(); } catch (e) {}
     location.reload();
   }
   setInterval(() => {
-    if (!session) return;
-    const left = IDLE_MS - (Date.now() - lastUse());
-    if (left <= 0) { idleOut(); return; }
-    if (left <= 60000 && !warned) { warned = true; window.toast && window.toast('1분 뒤 자동으로 로그아웃됩니다. 계속 쓰려면 마우스를 움직이세요.'); }
-    if (left > 60000) warned = false;
+    if (session && Date.now() - lastUse() > IDLE_MS) idleOut();
   }, 10000);
-  const outMsg = () => setTimeout(() => window.toast && window.toast(`${IDLE_MIN}분 넘게 사용하지 않아 자동으로 로그아웃되었습니다. 다시 로그인하세요.`), 600);
-  window.addEventListener('load', () => {
-    let out = false; try { out = sessionStorage.getItem(OUT_FLAG) === '1'; sessionStorage.removeItem(OUT_FLAG); } catch (e) {}
-    if (out) outMsg();
-  });
 
   async function onSignedIn(s) {
     session = s;
@@ -67,7 +57,6 @@
   const booted = sb.auth.getSession().then(async ({ data }) => {
     if (data && data.session && Date.now() - lastUse() > IDLE_MS) {   // 남아 있던 로그인이 오래됨 (컴퓨터를 껐다 켬 등)
       try { await sb.auth.signOut(); } catch (e) {}
-      outMsg();
       return false;
     }
     if (data && data.session) { try { await onSignedIn(data.session); } catch (e) { console.error(e); } }
