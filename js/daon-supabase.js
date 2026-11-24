@@ -297,7 +297,9 @@
       if (!profile || !profile.is_admin) return null;
       try {
         const staff = (typeof STAFF !== 'undefined' ? STAFF : []).filter(s => s.empNo).map(s => ({ emp: s.empNo, name: s.name, dept: s.dept || null }));
-        const retired = (typeof RETIRED !== 'undefined' ? RETIRED : []).map(s => s.empNo).filter(Boolean);
+        const removed = (typeof staffRemoved !== 'undefined' ? staffRemoved : []).map(r => r.empNo);   // 삭제한 직원도 계정을 막는다
+        const retired = [...new Set([...(typeof RETIRED !== 'undefined' ? RETIRED : []).map(s => s.empNo), ...removed].filter(Boolean))]
+          .filter(e => !staff.some(s => s.emp === e));   // 같은 사번을 지금 쓰는 직원이 있으면 막지 않는다
         const { data, error } = await sb.rpc('admin_sync_employees', { p_staff: staff, p_retired: retired });
         if (error) throw error;
         const say = typeof toast === 'function' ? toast : () => {};

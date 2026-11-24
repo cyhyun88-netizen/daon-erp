@@ -7837,6 +7837,9 @@ const empTag = n => { if (!n || !dupName(n)) return ''; const p = staffAll().fin
 const uniqName = (n, self) => { const c = cleanName(n); for (let k = 0; k < 50; k++) { const t = c + ZW.repeat(k); if (!staffAll().some(s => s !== self && s.name === t)) return t; } return c; };
 const isOut = s => !!(s && s.out && s.out < ymd(today));   // 퇴사일 당일까지는 재직
 let addedStaff = [], staffEdits = {}, customDuties = [];   // customDuties: 관리자가 직책 목록에 더한 직책 (config/staff.duties)
+/* 삭제한 직원: config/staff.removed = [{ bemp(예시 직원 기준 사번, 추가 직원은 없음), empNo, name, at }]
+   직원 명단 · 퇴사자 · 현장 배치 어디에도 나오지 않고, 로그인 계정은 퇴사자처럼 막는다(관리자 로그인 때 맞춤). 지난 문서의 이름은 그대로 보인다 */
+let staffRemoved = [];
 const dutyList = () => [...new Set([...DUTIES, ...customDuties])];
 /* 조직도 · 결재자 선택 목록 순서: 직책 → 직위 → 부서 → 이름. 관리자가 더한 직책은 부서원 바로 앞 */
 const DUTY_ORDER = ['회장', '부회장', '대표이사', '사장', '총괄임원', '본부장', '부서장', '팀장', '현장소장', '공무', '안전관리자', '공사', '품질', '기타', '부서원'];
@@ -7904,6 +7907,10 @@ function applyStaffConfig(cfg) {
   // 기존 직원 수정
   staffEdits = cfg.edits && typeof cfg.edits === 'object' ? cfg.edits : {};
   for (const [empNo, v] of Object.entries(staffEdits)) { const s = STAFF.find(x => x.bemp === empNo); if (s && v && v.rank && v.dept) { setPerson(s, v); if (v.empNo) s.empNo = v.empNo; } }
+  // 삭제한 예시 직원은 명단에서 뺀다 (추가 직원은 삭제할 때 목록에서 지운다)
+  staffRemoved = Array.isArray(cfg.removed) ? cfg.removed.filter(r => r && (r.bemp || r.empNo)) : [];
+  const removedNames = new Set();
+  for (const r of staffRemoved) if (r.bemp) for (let i = STAFF.length - 1; i >= 0; i--) if (STAFF[i].bemp === r.bemp && !STAFF[i].added && STAFF[i].name !== ME.name) { removedNames.add(STAFF[i].name); STAFF.splice(i, 1); }
   // 추가한 직원
   addedStaff = (Array.isArray(cfg.list) ? cfg.list : []).filter(a => a && a.name && a.empNo && a.rank && a.dept && !STAFF.some(s => s.name === a.name || s.empNo === a.empNo));
   for (const a of addedStaff) {
@@ -7916,7 +7923,7 @@ function applyStaffConfig(cfg) {
   staffSort();
   // 퇴사자 나누기: 재직 명단 · 현장 배치에서 빼고, 결재자 찾기(ORG)에는 표시만 남긴다(지난 문서의 이름 · 직위가 보이게)
   for (let i = STAFF.length - 1; i >= 0; i--) if (isOut(STAFF[i]) && STAFF[i].name !== ME.name) RETIRED.unshift(...STAFF.splice(i, 1));
-  const outNames = new Set(RETIRED.map(r => r.name));
+  const outNames = new Set([...RETIRED.map(r => r.name), ...removedNames]);
   ORG.forEach(o => { o.out = outNames.has(o.name); });
   for (const s of Object.values(SITE_STAFF)) s.staff = s.staff.filter(x => !outNames.has(x[0]));
   // 결재 문서: 이름을 되돌렸으면 처음 이름으로, 바꿨으면 새 이름으로
@@ -8131,9 +8138,9 @@ function adminDone(host) {
 }
 const applyAddedStaff = list => applyStaffConfig(list);   // 저장소 구독에서 부른다 (config/staff 문서 전체 또는 예전 배열)
 function loadLocalStaff() { try { applyStaffConfig(JSON.parse(localStorage.getItem(STAFF_KEY)) || {}); } catch (e) {} }
-async function saveStaffConfig(list, edits, duties = customDuties) {
+async function saveStaffConfig(list, edits, duties = customDuties, removed = staffRemoved) {
   const clean = list.map(({ name, rank, dept, empNo, duty, siteRole, mobile, email, ext, aka, join, out }) => ({ name, rank, dept, empNo, duty: duty || siteRole || '', mobile: mobile || '', email: email || '', ext: ext || '', join: join || '', out: out || '', ...(aka?.length ? { aka } : {}) }));
-  const cfg = { list: clean, edits, duties, at: new Date().toISOString() };
+  const cfg = { list: clean, edits, duties, removed, at: new Date().toISOString() };
   if (siteStore.remote) await siteStore.remote.doc('config/staff').set(cfg);
   else localStorage.setItem(STAFF_KEY, JSON.stringify(cfg));
   applyStaffConfig(cfg);
@@ -8913,15 +8920,40 @@ function staffList(host) {
     const k = q.value.trim(), rows = STAFF.filter(s => !k || [s.name, s.dept, s.rank, s.duty, s.siteName].some(x => (x || '').includes(k)));
     tb.innerHTML = rows.map(s => `<tr><td><b>${esc(s.name)}</b>${s.added ? ' <span class="mine-tag">추가</span>' : staffEdits[s.bemp] ? ' <span class="mine-tag">수정됨</span>' : ''}</td><td class="num">${s.empNo}</td><td>${esc(s.rank)}</td><td>${esc(s.duty || '')}</td>
       <td>${esc(s.siteName ? `${s.dept} (현장)` : DEPT_PARENT[s.dept] ? `${DEPT_PARENT[s.dept]} › ${s.dept}` : s.dept)}</td>
-      <td class="c num">${s.join ? dot8(s.join) : '<span class="bad">미등록</span>'}${s.out ? `<br><span class="pill wait">퇴사 예정 ${dot8(s.out)}</span>` : ''}</td><td class="c"><button class="btn sm" type="button" data-ed="${s.empNo}">수정</button></td></tr>`).join('')
+      <td class="c num">${s.join ? dot8(s.join) : '<span class="bad">미등록</span>'}${s.out ? `<br><span class="pill wait">퇴사 예정 ${dot8(s.out)}</span>` : ''}</td><td class="c" style="white-space:nowrap"><button class="btn sm" type="button" data-ed="${s.empNo}">수정</button> <button class="btn sm" type="button" data-sdel="${s.empNo}">삭제</button></td></tr>`).join('')
       || '<tr><td colspan="7" class="empty">해당하는 직원이 없습니다.</td></tr>';
     const c = m.el.querySelector('[data-scnt]'); if (c) c.textContent = STAFF.length;
   };
   q.oninput = draw;
   m.el.querySelector('[data-add]').onclick = () => staffEditor(draw);
   m.el.querySelector('[data-duties]').onclick = () => dutyManager(draw);
-  tb.addEventListener('click', e => { const b = e.target.closest('[data-ed]'); if (b) staffEditor(draw, STAFF.find(s => s.empNo === b.dataset.ed)); });
+  tb.addEventListener('click', e => {
+    const b = e.target.closest('[data-ed]'); if (b) staffEditor(draw, STAFF.find(s => s.empNo === b.dataset.ed));
+    const d = e.target.closest('[data-sdel]'); if (d) deleteStaff(STAFF.find(s => s.empNo === d.dataset.sdel), draw);
+  });
   draw(); q.focus();
+}
+/* 직원 삭제 (관리자): 잘못 들어간 직원 · 예시 직원을 명단에서 완전히 뺀다. 이름을 한 번 더 입력해야 지운다
+   실제로 일하다 그만둔 직원은 삭제 대신 퇴사일을 넣는다 (퇴사자 관리 · 퇴직증명서에 남도록) */
+function deleteStaff(p, done) {
+  if (!p) return;
+  if (p.name === ME.name) { toast('지금 로그인한 본인은 삭제할 수 없습니다.'); return; }
+  if (ADMIN_EMPS.includes(p.empNo)) { toast('관리자로 지정된 사번입니다. 먼저 관리자 지정에서 빼세요.'); return; }
+  const m = modal(`직원 삭제 · ${p.name}`, `<p><b>${esc(p.name)} ${esc(p.rank || '')}</b> (사번 ${esc(p.empNo)} · ${esc(p.dept || '')})을(를) 삭제합니다.</p>
+    <p class="se-note">직원 관리 · 퇴사자 관리 · 결재선 · 사원검색 · 연락망 · 현장 배치에서 모두 빠지고, <b>로그인 계정도 막힙니다.</b> 되돌릴 수 없습니다.
+      지난 결재 문서 · 기록에 적힌 이름은 그대로 보입니다.<br>실제로 근무하다 그만둔 직원이면 삭제 대신 [수정]에서 <b>퇴사일</b>을 넣으세요 (퇴사자 관리 · 퇴직증명서에 남습니다).</p>
+    <div class="form">${frow('확인', `<input class="field" name="cf" placeholder="이름 ${esc(cleanName(p.name))} 입력" autocomplete="off">`)}</div>`,
+    '<button class="btn" type="button" data-close>취소</button><button class="btn primary" type="button" data-ok>삭제</button>');
+  m.el.querySelector('[data-ok]').onclick = async () => {
+    if (m.el.querySelector('[name="cf"]').value.trim() !== cleanName(p.name)) { toast(`삭제하려면 이름 ${cleanName(p.name)}을(를) 그대로 입력하세요.`); return; }
+    const rec = { ...(p.added ? {} : { bemp: p.bemp }), empNo: p.empNo, name: cleanName(p.name), at: new Date().toISOString(), by: ME.name };
+    const list = p.added ? addedStaff.filter(a => a.empNo !== p.empNo) : addedStaff;
+    const edits = { ...staffEdits }; if (!p.added) delete edits[p.bemp];
+    try { await saveStaffConfig(list, edits, customDuties, [...staffRemoved, rec]); }
+    catch (e) { toast('삭제하지 못했습니다. 잠시 후 다시 시도하세요.'); return; }
+    window.daonAuth?.syncEmployees?.();   // 로그인 계정 막기
+    m.close(); toast(`${cleanName(p.name)}을(를) 삭제했습니다.`); done?.();
+  };
 }
 /* ───────── 퇴사자 관리 (관리자): 퇴사일이 지난 직원 목록 · 정보 수정 · 퇴직증명서 · 복직 처리 · 엑셀 */
 function retiredAdmin(host) {
@@ -8942,7 +8974,7 @@ function retiredAdmin(host) {
     $('[data-rsum]').textContent = `퇴사자 ${rs.length}명${rs.length !== RETIRED.length ? ` / 전체 ${RETIRED.length}명` : ''}`;
     $('tbody').innerHTML = rs.length ? rs.map(r => `<tr><td><b>${esc(r.name)}</b></td><td class="num">${esc(r.empNo)}</td><td>${esc(r.rank)}</td><td>${esc(where(r))}</td>
       <td class="c num">${r.join ? dot8(r.join) : '-'}</td><td class="c num">${dot8(r.out)}</td><td class="r num">${r.join ? certSpan(r.join, r.out) : '-'}</td>
-      <td class="c"><span class="hist-acts"><button class="btn sm" type="button" data-red="${esc(r.empNo)}">정보 수정</button><button class="btn sm" type="button" data-rcert="${esc(r.empNo)}">퇴직증명서</button><button class="btn sm" type="button" data-rback="${esc(r.empNo)}">복직 처리</button></span></td></tr>`).join('')
+      <td class="c"><span class="hist-acts"><button class="btn sm" type="button" data-red="${esc(r.empNo)}">정보 수정</button><button class="btn sm" type="button" data-rcert="${esc(r.empNo)}">퇴직증명서</button><button class="btn sm" type="button" data-rback="${esc(r.empNo)}">복직 처리</button><button class="btn sm" type="button" data-rdel="${esc(r.empNo)}">삭제</button></span></td></tr>`).join('')
       : `<tr><td colspan="8" class="empty">${RETIRED.length ? '조건에 맞는 퇴사자가 없습니다.' : '퇴사자가 없습니다. 직원 관리에서 퇴사일을 넣으면 퇴사일 다음 날부터 여기에 나옵니다.'}</td></tr>`;
     return true;
   };
@@ -8956,8 +8988,9 @@ function retiredAdmin(host) {
   };
   $('tbody').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
-    const r = RETIRED.find(x => x.empNo === (b.dataset.red || b.dataset.rcert || b.dataset.rback)); if (!r) return;
+    const r = RETIRED.find(x => x.empNo === (b.dataset.red || b.dataset.rcert || b.dataset.rback || b.dataset.rdel)); if (!r) return;
     if (b.dataset.red) staffEditor(draw, r);
+    if (b.dataset.rdel) deleteStaff(r, draw);
     if (b.dataset.rcert) openCertIssue({ kind: '퇴직', name: r.name });
     if (b.dataset.rback) confirmBox('복직 처리', `<b>${esc(r.name)} ${esc(r.rank)}</b>의 퇴사일(${esc(dot8(r.out))})을 지우고 재직 명단으로 되돌릴까요?<br>로그인 · 결재선 · 사원검색에 다시 나옵니다.`, '복직 처리', async () => {
       try {
