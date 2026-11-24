@@ -5937,11 +5937,13 @@ function openPost(menu, row, fromKey) {
    연락처: 공용 기록 shared 'profile' { emp, mobile, email } — 직원은 회사 설정(config/staff)을 쓸 수 없어 자기 영역에 남기고,
    읽을 때 관리자가 직원 관리에서 저장한 것보다 나중이면 겹쳐 보여 준다. 비밀번호: auth.setPw (처음 로그인 때와 같은 저장) */
 function applyProfiles() {
-  const cfgAt = lastStaffCfg?.at || '', last = {};
+  const last = {};
   for (const r of shared.of('profile')) if (r.emp && (!last[r.emp] || (r.at || '') > (last[r.emp].at || ''))) last[r.emp] = r;
   for (const r of Object.values(last)) {
-    if ((r.at || '') <= cfgAt) continue;   // 관리자가 그 뒤에 직원 정보를 고쳤으면 관리자 값
     const p = staffAll().find(s => s.empNo === r.emp); if (!p) continue;
+    // 관리자가 그 뒤에 이 직원의 휴대폰 · 이메일을 직접 고쳤으면 관리자 값 (다른 직원을 고친 것과는 상관없다)
+    const adminAt = (p.added ? addedStaff.find(a => a.empNo === p.empNo)?.cat : staffEdits[p.bemp]?.cat) || '';
+    if ((r.at || '') <= adminAt) continue;
     if (typeof r.mobile === 'string') p.mobile = r.mobile;
     if (typeof r.email === 'string') p.email = r.email;
   }
@@ -8324,7 +8326,7 @@ function adminDone(host) {
 const applyAddedStaff = list => applyStaffConfig(list);   // 저장소 구독에서 부른다 (config/staff 문서 전체 또는 예전 배열)
 function loadLocalStaff() { try { applyStaffConfig(JSON.parse(localStorage.getItem(STAFF_KEY)) || {}); } catch (e) {} }
 async function saveStaffConfig(list, edits, duties = customDuties, removed = staffRemoved) {
-  const clean = list.map(({ name, rank, dept, empNo, duty, siteRole, mobile, email, ext, aka, join, out }) => ({ name, rank, dept, empNo, duty: duty || siteRole || '', mobile: mobile || '', email: email || '', ext: ext || '', join: join || '', out: out || '', ...(aka?.length ? { aka } : {}) }));
+  const clean = list.map(({ name, rank, dept, empNo, duty, siteRole, mobile, email, ext, aka, join, out, cat }) => ({ name, rank, dept, empNo, duty: duty || siteRole || '', mobile: mobile || '', email: email || '', ext: ext || '', join: join || '', out: out || '', ...(aka?.length ? { aka } : {}), ...(cat ? { cat } : {}) }));
   const cfg = { list: clean, edits, duties, removed, at: new Date().toISOString() };
   if (siteStore.remote) await siteStore.remote.doc('config/staff').set(cfg);
   else localStorage.setItem(STAFF_KEY, JSON.stringify(cfg));
@@ -8424,6 +8426,9 @@ function staffEditor(done, p) {
   m.el.querySelector('[data-ok]').onclick = async () => {
     if (dSel.value === '__custom' && !dTxt.value.trim()) { toast('직책 이름을 입력하세요.'); dTxt.focus(); return; }
     const val = { rank: v('rank'), dept: v('dept'), duty: dutyVal(), mobile: v('mobile'), email: v('email'), ext: v('ext'), join: v('join'), out: v('out') };
+    // cat: 관리자가 이 직원의 휴대폰 · 이메일을 고친 시각 (직원이 개인정보 변경에서 바꾼 값과 어느 쪽이 나중인지 비교)
+    const prevCat = p ? (p.added ? addedStaff.find(a => a.empNo === p.empNo)?.cat : staffEdits[p.bemp]?.cat) || '' : '';
+    val.cat = !p || val.mobile !== (p.mobile || '') || val.email !== (p.email || '') ? new Date().toISOString() : prevCat;
     if (val.out && val.join && val.out < val.join) { toast('퇴사일이 입사일보다 빠릅니다.'); return; }
     if (val.out && p && p.name === ME.name && val.out < ymd(today)) { toast('지금 로그인한 본인은 퇴사 처리할 수 없습니다.'); return; }
     if (val.out && (!p || isOut(p) !== (val.out < ymd(today))) && !(await new Promise(res => confirmBox(val.out < ymd(today) ? '퇴사 처리' : '복직 · 퇴사 예정',
