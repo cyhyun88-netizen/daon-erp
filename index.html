@@ -1148,32 +1148,8 @@ table.doc-forms { min-width: 1080px; }
 @media (max-width: 600px) { .ot-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .ot-bad { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 6px; }
 /* 전자메일 · 알림 */
-.center > .w-memo { grid-column: 1 / -1; }
-.w-memo.has-new { border: 2px solid var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
-.w-memo .w-head { display: flex; align-items: center; gap: 8px; }
-.w-memo .w-head h3 { display: flex; align-items: center; gap: 6px; }
-.memo-badge { display: inline-block; min-width: 20px; padding: 1px 7px; border-radius: 10px; background: #d64545; color: #fff; font-size: 12px; font-weight: 700; text-align: center; font-family: var(--mono); }
-.memo-list { list-style: none; margin: 0; padding: 0 0 6px; }
-.memo-list button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 14px; border: 0; background: none; text-align: left; font: inherit; color: var(--ink); cursor: pointer; }
-.memo-list li + li button { border-top: 1px solid var(--line); }
-.memo-list button:hover { background: var(--accent-soft); }
-.memo-list b { flex: 0 0 auto; }
-.memo-list .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.memo-list .date { color: var(--ink-2); font-size: 12px; }
-.memo-empty { display: flex; align-items: center; gap: 8px; padding: 10px 14px; color: var(--ink-2); }
-.memo-empty .spacer { flex: 1; }
 .stat-row.hot .k { color: var(--ink); font-weight: 700; }
 .stat-row.hot .v { background: #d64545; color: #fff; border-radius: 10px; padding: 0 8px; font-weight: 700; }
-#foot-mail { transition: color .2s; }
-button.hot #foot-mail { background: #d64545; color: #fff; border-radius: 9px; padding: 0 6px; }
-.memo-pop { position: fixed; right: 18px; bottom: calc(var(--foot-h, 32px) + 18px); z-index: 900; width: 300px; background: var(--surface); color: var(--ink); border: 2px solid var(--accent); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.22); animation: memo-in .25s ease-out; }
-.memo-pop .mp-h { display: flex; align-items: center; gap: 6px; padding: 8px 8px 4px 12px; color: var(--accent); }
-.memo-pop .mp-h .spacer { flex: 1; }
-.memo-pop .mp-b { display: flex; flex-direction: column; gap: 2px; padding: 2px 14px 8px; }
-.memo-pop .mp-b span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.memo-pop .mp-f { display: flex; justify-content: flex-end; padding: 0 12px 10px; }
-@keyframes memo-in { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }
-@media print { .memo-pop { display: none !important; } }
 /* (전자우편 · 알림) */
 .ml-form { margin: 8px 0; }
 .ml-pick { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex: 1; }
@@ -1497,6 +1473,7 @@ const MENUS = [
     { id: 'plan', name: '기획게시판', type: 'board' }, { id: 'it', name: '전산게시판', type: 'board' },
     { id: 'order', name: '수주공지', type: 'board' }, { id: 'safety', name: '안전보건정보', type: 'board' } ] },
   { id: 'mail', name: '전자메일', icon: 'mail', items: [
+    { id: 'inbox', name: '전자메일', type: 'extmail' },   // 회사 메일(Gmail) 연동 자리 (아직 준비 중)
     { id: 'memo', name: '사내통신', type: 'mailbox', get cnt() { return mailUnread(); } } ] },   // 직원끼리 주고받는 사내통신 (받은 · 보낸 통신함). 회사 메일 연동은 나중에
   { id: 'doc', name: '문서관리', icon: 'doc', items: [
     { id: 'write', name: '문서작성', type: 'docwrite' }, { id: 'manage', name: '문서관리', type: 'docmanage' },
@@ -1789,7 +1766,7 @@ tabsEl.addEventListener('keydown', e => { const t = e.target.closest('[data-tab]
 document.getElementById('close-all').onclick = () => { [...tabs].reverse().forEach(t => t.id !== 'home' && closeTab(t.id)); activate('home'); };
 
 /* 예전 주소 → 지금 화면 (기안작성은 문서관리 › 문서작성과 같은 화면) */
-const KEY_ALIAS = { 'mail.inbox': 'mail.memo', 'mail.sent': 'mail.memo', 'appr.wait': 'appr.do', 'appr.prog': 'appr.status', 'appr.done': 'appr.status', 'appr.rej': 'appr.status', 'appr.circ': 'appr.status', 'appr.draft': 'doc.write',
+const KEY_ALIAS = { 'mail.sent': 'mail.inbox', 'appr.wait': 'appr.do', 'appr.prog': 'appr.status', 'appr.done': 'appr.status', 'appr.rej': 'appr.status', 'appr.circ': 'appr.status', 'appr.draft': 'doc.write',
   'work.leave': 'sec.leave', 'sec.car': 'work.car', 'know.tech': 'know.data', 'know.std': 'know.rules', 'comm.club': 'comm.free' };   // 전자비서 메뉴를 원본 구성으로 바꾸며 옮긴 화면
 function openTab(key, opts) {
   key = KEY_ALIAS[key] || key;
@@ -5989,7 +5966,7 @@ function renderHome(pane) {
         <div class="w-head"><span class="eyebrow">My Information</span></div>
         <div class="me"><div class="avatar">${esc(ME.name[0])}</div><div><b>${esc(`${ME.name} ${ME.rank}`)}</b><span>${esc(ME.dept)}</span></div></div>
         <button class="stat-row" type="button" data-noti><span class="k">${icon('notice')}알림</span><span class="v" data-hnoti>${notiCount()}</span></button>
-        <button class="stat-row" type="button" data-open="mail.memo"><span class="k">${icon('inbox')}사내통신</span><span class="v" data-hmail>${mailUnread()}</span></button>
+        <button class="stat-row ${mailUnread() ? 'hot' : ''}" type="button" data-open="mail.memo"><span class="k">${icon('inbox')}사내통신</span><span class="v" data-hmail>${mailUnread()}</span></button>
         <button class="stat-row" type="button" data-open="doc.write"><span class="k">${icon('write')}문서작성</span><span class="v">${icon('arrow')}</span></button>
         <button class="stat-row" type="button" data-myinfo><span class="k">${icon('lock')}개인정보 변경</span><span class="v">${icon('arrow')}</span></button>
       </section>
@@ -6004,7 +5981,6 @@ function renderHome(pane) {
         </ul></section>
     </div>
     <div class="col center">
-      <section class="widget w-memo" id="w-memo"></section>
       <div class="col">
         <section class="widget" id="w-notice"></section>
         <section class="widget" id="w-appr"></section>
@@ -6024,7 +6000,6 @@ function renderHome(pane) {
     </div>
   </div>`;
   miniCal(pane.querySelector('#mini-cal'), today.getFullYear(), today.getMonth());
-  try { drawHomeMail(pane); } catch (e) {}
   weatherWidget(pane.querySelector('#weather'));
   siteWidgets(pane);
   apprHome(pane);
@@ -11490,42 +11465,6 @@ function openMailEditor(pre = {}) {
     draw(); setTimeout(() => pane.querySelector(pick.to.length ? `#${pane.id}-mt` : '[data-pick="to"] [data-add]')?.focus());
   });
 }
-/* HOME 사내통신: 안 읽은 사내통신을 HOME 가운데 맨 위에 눈에 띄게 (없으면 한 줄) */
-function drawHomeMail(h) {
-  const el = h?.querySelector('#w-memo'); if (!el) return;
-  const un = mailInbox().filter(m => !mailRead(m));
-  el.classList.toggle('has-new', un.length > 0);
-  el.innerHTML = un.length ? `<div class="w-head"><h3>${icon('inbox')} 새 사내통신 <span class="memo-badge">${un.length}</span></h3><span class="spacer"></span><button class="btn sm" type="button" data-open="mail.memo">사내통신함</button></div>
-      <ul class="memo-list">${un.slice(0, 5).map(m => `<li><button type="button" data-hmemo="${esc(m.sid)}"><span class="ml-dot" aria-label="안 읽음"></span><b>${esc(mailWho(m.from))}</b><span class="t">${esc(m.title)}${m.files?.length ? ` ${icon('clip')}` : ''}</span><span class="date num">${esc((m.sentAt || '').slice(5, 16))}</span></button></li>`).join('')}</ul>
-      ${un.length > 5 ? `<p class="crumb" style="margin:6px 14px 10px">외 ${un.length - 5}통 더 있습니다.</p>` : ''}`
-    : `<div class="memo-empty">${icon('inbox')}<span>새 사내통신이 없습니다.</span><span class="spacer"></span><button class="btn sm" type="button" data-open="mail.memo">사내통신함</button><button class="btn sm" type="button" data-hmnew>사내통신 쓰기</button></div>`;
-}
-/* 새 사내통신 도착 알림: 화면을 보고 있는 동안 새로 온 통신을 오른쪽 아래에 띄운다 (접속 전에 온 것은 HOME · 알림에서) */
-const MAIL_SINCE = Date.now() - 120000;
-const mailShown = new Set();
-function mailArrivals() {
-  if (typeof shared === 'undefined' || !ME?.name) return;
-  const fresh = mailInbox().filter(m => !mailRead(m) && m.sid && !mailShown.has(m.sid) && tms(m.made || m.sentAt) > MAIL_SINCE);
-  if (!fresh.length) return;
-  fresh.forEach(m => mailShown.add(m.sid));
-  const m = fresh.sort((a, b) => tms(b.made || b.sentAt) - tms(a.made || a.sentAt))[0];
-  document.querySelector('.memo-pop')?.remove();
-  const el = document.createElement('div');
-  el.className = 'memo-pop'; el.setAttribute('role', 'alert');
-  el.innerHTML = `<div class="mp-h">${icon('inbox')}<b>새 사내통신</b>${fresh.length > 1 ? `<span class="memo-badge">${fresh.length}</span>` : ''}<span class="spacer"></span><button type="button" class="icon-btn" data-mpx aria-label="닫기">${icon('close')}</button></div>
-    <div class="mp-b"><b>${esc(mailWho(m.from))}</b><span>${esc(m.title)}</span></div>
-    <div class="mp-f"><button type="button" class="btn sm primary" data-mpo>열기</button></div>`;
-  document.body.appendChild(el);
-  el.addEventListener('click', e => {
-    if (e.target.closest('[data-mpo]')) { el.remove(); if (fresh.length > 1) openTab('mail.memo', { box: 'in' }); else openMail(m); }
-    if (e.target.closest('[data-mpx]')) el.remove();
-  });
-  setTimeout(() => el.remove(), 30000);
-}
-document.addEventListener('click', e => {
-  const a = e.target.closest('[data-hmemo]'); if (a) { const m = mailAll().find(x => x.sid === a.dataset.hmemo); if (m) openMail(m); }
-  if (e.target.closest('[data-hmnew]')) openMailEditor();
-});
 function openMail(m0) {
   const tabId = `mail.view.${m0.sid}`;
   addTab(tabId, m0.title.slice(0, 18), pane => {
@@ -11554,6 +11493,13 @@ function openMail(m0) {
     });
   });
 }
+/* 전자메일: 회사 메일 연동 자리 (연동 전 안내) */
+RENDERERS.extmail = (pane, menu, item) => {
+  pane.innerHTML = head(menu, item) + `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:24px 4px">
+    <p style="margin:0"><b>회사 메일(받은편지함 · 보낸편지함)은 연동 준비 중입니다.</b><br><span class="crumb">회사 메일 계정을 ERP에 연결하면 이곳에서 메일을 받고 보낼 수 있습니다.</span></p>
+    <p style="margin:0" class="crumb">직원끼리 주고받는 메시지는 <b>사내통신</b>을 쓰세요.</p>
+    <button class="btn primary" type="button" data-open="mail.memo">사내통신으로 가기</button></div>`;
+};
 RENDERERS.mailbox = (pane, menu, item, key, opts) => {
   let box = opts?.box === 'out' ? 'out' : 'in';
   pane.innerHTML = head(menu, item) + `<div class="subtabs" role="tablist" data-mbox><button type="button" role="tab" class="subtab" data-box="in">받은 통신 <span class="num" data-nin></span></button><button type="button" role="tab" class="subtab" data-box="out">보낸 통신</button></div>
@@ -11623,9 +11569,7 @@ function notiCount() { const seen = notiSeen(); return notiList().filter(n => n.
 function notiChanged() {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   set('foot-noti', notiCount()); set('foot-mail', mailUnread());
-  const h = tabs.find(t => t.id === 'home')?.pane; if (h) { const a = h.querySelector('[data-hnoti]'), b = h.querySelector('[data-hmail]'); if (a) a.textContent = notiCount(); if (b) { b.textContent = mailUnread(); b.closest('.stat-row')?.classList.toggle('hot', mailUnread() > 0); } try { drawHomeMail(h); } catch (e) {} }
-  document.getElementById('foot-mail')?.closest('button')?.classList.toggle('hot', mailUnread() > 0);
-  try { mailArrivals(); } catch (e) {}   // 새 사내통신 알림 (초기화 중이면 건너뜀)
+  const h = tabs.find(t => t.id === 'home')?.pane; if (h) { const a = h.querySelector('[data-hnoti]'), b = h.querySelector('[data-hmail]'); if (a) a.textContent = notiCount(); if (b) { b.textContent = mailUnread(); b.closest('.stat-row')?.classList.toggle('hot', mailUnread() > 0); } }
 }
 function openNoti() {
   const seen = notiSeen(), list = notiList();
