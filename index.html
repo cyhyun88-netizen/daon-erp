@@ -2112,7 +2112,7 @@ function postEditor(menu, key, row, after) {
 /* ── 공지사항 › 수주공지: 글마다 수주 정보 ord { kind 분류, client 발주처, price 낙찰가격(원), dept 사업부서, date 수주일 }
    목록은 순번 · 분류 · 용역명 · 발주처 · 낙찰가격 · 사업부서 · 수주일 (기간검색 · 줄 수 · 열 눌러 정렬) */
 const ORDER_KEY = 'notice.order';
-const ORDER_KINDS = ['시공', '설계', '감리', 'CM', '용역', '기타'];
+const ORDER_KINDS = ['공사', '기타'];
 const ordOf = r => r.ord || {};
 const ordDate = r => ordOf(r).date || r.date || '';
 function orderBoard(pane, menu, item, key) {
@@ -2160,7 +2160,7 @@ function orderBoard(pane, menu, item, key) {
 }
 /* 수주공지 글쓰기 칸 · 글보기 정보 */
 const orderFields = (pid, row) => { const o = row?.ord || {};
-  return `<label for="${pid}-okind">분류</label><select class="field" id="${pid}-okind">${ORDER_KINDS.map(k => `<option ${k === (o.kind || '시공') ? 'selected' : ''}>${k}</option>`).join('')}</select>
+  return `<label for="${pid}-okind">분류</label><select class="field" id="${pid}-okind">${[...new Set([...ORDER_KINDS, o.kind].filter(Boolean))].map(k => `<option ${k === (o.kind || '공사') ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select>
     <label for="${pid}-title">용역명</label><input class="field" id="${pid}-title" value="${esc(row?.title || '')}" placeholder="예: ○○ 신축공사 / ○○ 건설사업관리용역" autocomplete="off">
     <label for="${pid}-odate">수주일</label><input class="field" type="date" id="${pid}-odate" value="${esc(o.date || ymd(new Date()))}">
     <label for="${pid}-oclient">발주처</label><input class="field" id="${pid}-oclient" value="${esc(o.client || '')}" placeholder="예: 경기도 의정부시" autocomplete="off">
