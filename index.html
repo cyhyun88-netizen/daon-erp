@@ -1294,6 +1294,11 @@ table.kv { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .appr-table td.link { color: var(--accent); }
 .appr-table .clip { display: inline-flex; align-items: center; gap: 2px; color: var(--ink-2); }
 .appr-table .clip svg.i { width: 15px; height: 15px; }
+.appr-adm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 8px; }
+.appr-adm [data-admbar] { display: contents; }
+.appr-adm [data-admbar][hidden] { display: none; }
+.appr-table td.appr-chk, .appr-table th.appr-chk { cursor: pointer; }
+.appr-table tr.on td { background: var(--accent-soft, rgba(59,130,246,.08)); }
 .appr-foot { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 6px; }
 .appr-foot .crumb { align-self: flex-start; }
 .pager button:disabled { opacity: .4; cursor: default; }
@@ -4365,7 +4370,8 @@ const apprRow = d => ({ d, dept: d.line[0].dept, form: d.form.name, urgent: d.ur
   title: d.title, who: d.line[0].name, st: apprState(d) === 'todo' ? '결재대기' : d.status, files: d.files.length, ops: d.opinions?.length || 0, at: d.at, no: d.no || '' });
 function apprList(pane, key, host, base, extra = {}) {
   const f = { dept: '', cat: '', scope: 'title', q: '', size: 10, kind: '', st: '' };
-  let page = 1, sortKey = 'at', dir = -1;
+  let page = 1, sortKey = 'at', dir = -1, adm = false;   // adm: 전체 관리자 [관리자] 선택 삭제 모드
+  const picked = new Set();   // 고른 문서 uid (쪽 · 조건을 바꿔도 남는다)
   const sel = (k, label, opts) => `<label for="${pane.id}-${k}">${label}</label><div><select class="field" id="${pane.id}-${k}" data-k="${k}"><option value="">전체</option>${opts.map(o => `<option>${esc(o)}</option>`).join('')}</select></div>`;
   host.innerHTML = `<form class="apf" data-apf>
       ${sel('dept', '부서별', DEPTS)}${sel('cat', '양식분류', [...new Set(DOC_FORMS.map(x => x.mid))])}
@@ -4376,7 +4382,8 @@ function apprList(pane, key, host, base, extra = {}) {
         <button class="btn primary" type="submit">검색</button>
         <select class="field" data-k="size" aria-label="한 쪽에 보일 줄 수"><option value="10">10줄</option><option value="20">20줄</option><option value="50">50줄</option></select></div>
     </form>
-    <div class="table-wrap"><table class="grid doc-forms appr-table"><thead><tr>${APPR_COLS.map(([k, l, w]) => `<th data-sort="${k}"${w ? ` style="width:${w}px"` : ''}><button type="button">${l}<span class="arr">▾</span></button></th>`).join('')}</tr></thead><tbody></tbody></table></div>
+    ${extra.admin ? '<div class="appr-adm" data-adm><button class="btn sm" type="button" data-admon aria-pressed="false">관리자</button><span data-admbar hidden><button class="btn sm" type="button" data-admpage>이 쪽 모두 선택</button><button class="btn sm" type="button" data-admnone>선택 해제</button><button class="btn sm danger" type="button" data-admdel disabled>선택 삭제</button><span class="crumb">삭제한 문서는 관리자 › 임시저장소로 옮겨지며 복원할 수 있습니다.</span></span></div>' : ''}
+    <div class="table-wrap"><table class="grid doc-forms appr-table"><thead><tr><th class="c appr-chk" data-chkth hidden style="width:44px"><input type="checkbox" data-chkall aria-label="이 쪽 모두 선택"></th>${APPR_COLS.map(([k, l, w]) => `<th data-sort="${k}"${w ? ` style="width:${w}px"` : ''}><button type="button">${l}<span class="arr">▾</span></button></th>`).join('')}</tr></thead><tbody></tbody></table></div>
     <div class="appr-foot"><span class="crumb" data-sum></span><div class="pager" data-pager></div></div>`;
   const form = host.querySelector('[data-apf]'), tbody = host.querySelector('tbody');
   const cells = form.querySelectorAll(':scope > div:not(.apf-q)');
@@ -4395,12 +4402,21 @@ function apprList(pane, key, host, base, extra = {}) {
       th.querySelector('.arr').textContent = on && dir < 0 ? '▴' : '▾';
     });
     const pill = { 결재대기: 'wait', 진행: 'prog', 완료: 'done', 반려: 'rej' };
-    tbody.innerHTML = list.length ? list.slice((page - 1) * size, page * size).map(r => `<tr data-uid="${r.d.uid}" tabindex="0">
+    const shown = list.slice((page - 1) * size, page * size);
+    tbody.innerHTML = list.length ? shown.map(r => `<tr data-uid="${r.d.uid}" tabindex="0" class="${adm && picked.has(r.d.uid) ? 'on' : ''}">${adm ? `<td class="c appr-chk" data-chk><input type="checkbox" ${picked.has(r.d.uid) ? 'checked' : ''} aria-label="${esc(r.title)} 선택"></td>` : ''}
         <td class="link">${esc(r.dept)}</td><td class="link">${esc(r.form)}</td><td class="c">${r.urgent === '긴급' ? '<span class="pill rej">긴급</span>' : '보통'}</td>
         <td class="num">${r.done}</td><td class="title">${esc(r.title)}</td><td>${esc(r.who)}</td><td class="c"><span class="pill ${pill[r.st]}">${r.st}</span></td>
         <td class="c">${r.files ? `<span class="clip" title="첨부 ${r.files}개">${icon('clip')}<span class="num">${r.files}</span></span>` : '-'}</td>
         <td class="c num">${r.ops || '-'}</td><td class="num">${r.at}</td></tr>`).join('')
-      : `<tr><td colspan="${APPR_COLS.length}" class="empty">조건에 맞는 결재 문서가 없습니다.</td></tr>`;
+      : `<tr><td colspan="${APPR_COLS.length + (adm ? 1 : 0)}" class="empty">조건에 맞는 결재 문서가 없습니다.</td></tr>`;
+    pageUids = shown.map(r => r.d.uid);
+    if (extra.admin) {
+      for (const u of [...picked]) if (!APPR_DOCS.some(d => d.uid === u)) picked.delete(u);   // 이미 지워진 문서
+      host.querySelector('[data-chkth]').hidden = !adm;
+      const all = host.querySelector('[data-chkall]'), n = pageUids.filter(u => picked.has(u)).length;
+      all.checked = !!pageUids.length && n === pageUids.length; all.indeterminate = n > 0 && n < pageUids.length;
+      const del = host.querySelector('[data-admdel]'); del.disabled = !picked.size; del.textContent = picked.size ? `선택 ${picked.size}건 삭제` : '선택 삭제';
+    }
     host.querySelector('[data-sum]').textContent = `${list.length}건 · 줄을 누르면 문서가 새 탭으로 열립니다.`;
     const pg = (p, l, on) => `<button type="button" data-pg="${p}" class="${on ? 'on' : ''}" ${p < 1 || p > pages ? 'disabled' : ''}>${l}</button>`;
     host.querySelector('[data-pager]').innerHTML = pg(1, '«') + pg(page - 1, '‹') + Array.from({ length: pages }, (_, i) => pg(i + 1, i + 1, i + 1 === page)).join('') + pg(page + 1, '›') + pg(pages, '»');
@@ -4414,8 +4430,29 @@ function apprList(pane, key, host, base, extra = {}) {
     draw();
   });
   host.querySelector('[data-pager]').addEventListener('click', e => { const b = e.target.closest('[data-pg]'); if (b && !b.disabled) { page = +b.dataset.pg; draw(); } });
+  let pageUids = [];
   const open = tr => openDocView(APPR_DOCS.find(d => d.uid === +tr.dataset.uid && apprCanRead(d)), key);
-  tbody.addEventListener('click', e => { const tr = e.target.closest('[data-uid]'); if (tr) open(tr); });
+  tbody.addEventListener('click', e => { const tr = e.target.closest('[data-uid]'); if (!tr) return;
+    if (adm && e.target.closest('[data-chk]')) { const u = +tr.dataset.uid; if (picked.has(u)) picked.delete(u); else picked.add(u); draw(); return; }   // 관리자 모드: 체크 칸은 고르기
+    open(tr); });
+  if (extra.admin) {
+    const bar = host.querySelector('[data-adm]');
+    host.querySelector('[data-chkall]').addEventListener('change', e => { pageUids.forEach(u => (e.target.checked ? picked.add(u) : picked.delete(u))); draw(); });
+    bar.addEventListener('click', e => {
+      if (e.target.closest('[data-admon]')) { adm = !adm; if (!adm) picked.clear(); e.target.closest('[data-admon]').setAttribute('aria-pressed', String(adm)); e.target.closest('[data-admon]').classList.toggle('primary', adm); bar.querySelector('[data-admbar]').hidden = !adm; draw(); }
+      if (e.target.closest('[data-admpage]')) { pageUids.forEach(u => picked.add(u)); draw(); }
+      if (e.target.closest('[data-admnone]')) { picked.clear(); draw(); }
+      const del = e.target.closest('[data-admdel]'); if (!del || !picked.size) return;
+      if (!isSuper()) { toast('전체 관리자만 결재 문서를 삭제할 수 있습니다.'); return; }
+      const docs = APPR_DOCS.filter(d => picked.has(d.uid)), st = docs.reduce((m, d) => ((m[d.status] = (m[d.status] || 0) + 1), m), {});
+      confirmBox('결재 문서 선택 삭제', `고른 문서 <b>${docs.length}건</b>(${Object.entries(st).map(([k, v]) => `${esc(k)} ${v}`).join(' · ')})과 결재 · 반려 기록을 <b>임시저장소</b>로 옮깁니다. 직원들의 결재함에서도 사라집니다.<br><small class="crumb">${docs.slice(0, 8).map(d => esc(`${d.no} ${d.title}`)).join('<br>')}${docs.length > 8 ? `<br>외 ${docs.length - 8}건` : ''}</small><br>임시저장소에서 복원하거나 완전히 지울 수 있습니다.`, '삭제', async () => {
+        del.disabled = true; let ok = 0, fail = 0;
+        for (const d of docs) { del.textContent = `삭제 중… ${ok + fail + 1}/${docs.length}`; try { await trashDoc(d); picked.delete(d.uid); ok++; } catch (er) { fail++; } }
+        apprChanged(); draw();
+        toast(fail ? `${ok}건을 임시저장소로 옮겼고 ${fail}건은 삭제하지 못했습니다. 잠시 후 다시 시도하세요.` : `${ok}건을 임시저장소로 옮겼습니다.`);
+      });
+    });
+  }
   tbody.addEventListener('keydown', e => { const tr = e.target.closest('[data-uid]'); if (tr && e.key === 'Enter') open(tr); });
   draw();
   return draw;
@@ -4512,7 +4549,7 @@ Object.assign(RENDERERS, {
   apprsearch(pane, menu, item, key) {
     pane.innerHTML = head(menu, item) + apprLead(seeAllDocs() ? `${isSuper() ? '전체 관리자' : '대표'}라 결재선에 없어도 회사의 모든 결재 문서를 찾아 볼 수 있습니다. (일반 직원은 자기가 결재선·참조자에 있는 문서만 찾습니다)`
       : '내가 결재선(기안·검토·승인·협조·회람·접수)에 있거나 참조자로 지정된 결재 문서만 찾을 수 있습니다. 그 밖의 문서는 목록·건수·검색 어디에도 나오지 않습니다. 문서관리 › 문서작성에서 상신한 문서도 여기에 바로 나옵니다.') + '<div data-host></div>';
-    const redraw = apprList(pane, key, pane.querySelector('[data-host]'), () => seeAllDocs() ? APPR_DOCS.slice() : myDocs(), { kind: true, st: true });
+    const redraw = apprList(pane, key, pane.querySelector('[data-host]'), () => seeAllDocs() ? APPR_DOCS.slice() : myDocs(), { kind: true, st: true, admin: isSuper() });
     pane.apprRefresh = redraw;
     apprViews.add(pane);
   },
@@ -8624,35 +8661,39 @@ const apprTrash = {
    - 내 문서: 위 + 예전 개인 영역(data/users/<나>/appr_*) · 이 브라우저 보관분 (다시 옮겨져 살아나지 않게)
    - 예시 문서: 저장소에 없으므로 config/approval.deleted 에 번호를 남겨 숨긴다
    저장된 문서도 지운 표시(기안자/번호)를 남겨, 직원 브라우저의 옛 사본이 다시 올라와도 보이지 않게 한다 */
+async function trashDoc(doc) {   // 결재 문서 하나를 임시저장소로 옮긴다 (확인 창 없이, 실패하면 throw)
+
+  const db = apprShared.db, owner = apprShared.ownerOf(doc), key = apprShared.key(doc.no);
+    const mark = !doc.own && !doc.sharedOwner ? doc.no : owner ? `${owner}/${doc.no}` : null;   // 예시 문서는 번호, 저장된 문서는 기안자/번호
+    const acts = [];
+    if (owner) for (const [id, m] of Object.entries(apprShared.acts)) for (const [k, v] of Object.entries(m || {})) if (k.startsWith(`${owner}__${key}__`)) acts.push({ p: `appr/${id}/acts/${k}`, v });
+    const { sharedOwner, own, ...plain } = doc;
+    await apprTrash.put(`${owner || (doc.own ? 'local' : 'sample')}__${key}`, { kind: doc.own ? 'own' : doc.sharedOwner ? 'shared' : 'sample', owner: owner || null, no: doc.no, title: doc.title, form: doc.form.name,
+      drafter: doc.line[0]?.name || '', status: doc.status, json: apprStore.pack(plain), acts, mark, at: nowStamp(), by: `${ME.name} ${ME.rank}` });
+    if (mark) await saveApprCfg({ deleted: [...new Set([...APPR_CFG.deleted, mark])] });
+    if (db && owner) {
+      await db.doc(`appr/${owner}/docs/${key}`).delete();
+      for (const a of acts) await db.doc(a.p).delete().catch(() => {});
+      if (doc.own && apprStore.col) {
+        const snap = await apprStore.col.get();
+        for (const r of snap.docs) if (r.id.startsWith('appr_')) { try { if (JSON.parse(r.data().json).no === doc.no) await apprStore.col.doc(r.id).delete(); } catch (e) {} }
+      }
+    }
+    if (doc.own) {
+      delete apprStore.sent[doc.no];
+      try { const a = JSON.parse(localStorage.getItem(APPR_KEY)); if (a?.docs?.[doc.no]) { delete a.docs[doc.no]; localStorage.setItem(APPR_KEY, JSON.stringify(a)); } } catch (e) {}
+    }
+    if (owner && apprShared.docs[owner]) delete apprShared.docs[owner][key];
+    const i = APPR_DOCS.indexOf(doc); if (i >= 0) APPR_DOCS.splice(i, 1);
+    if (owner) delete apprShared.objs[`${owner}/${doc.no}`];
+    if (doc.own && apprStore.mode === 'local') apprStore.save();
+    tabs.filter(t => t.id.endsWith(`.view.${doc.uid}`)).map(t => t.id).forEach(closeTab);   // 열려 있던 문서보기 탭
+}
 function adminDeleteDoc(doc, done) {
   if (!isSuper()) { toast('전체 관리자만 결재 문서를 삭제할 수 있습니다.'); return; }
   confirmBox('결재 문서 삭제', `<b>${esc(doc.no)}</b> 「${esc(doc.title)}」 (${esc(doc.line[0]?.name || '')} · ${esc(doc.status)})<br>이 문서와 결재·반려 기록을 <b>임시저장소</b>로 옮깁니다. 임시저장소에서 복원하거나 완전히 지울 수 있습니다.`, '삭제', async () => {
-    const db = apprShared.db, owner = apprShared.ownerOf(doc), key = apprShared.key(doc.no);
     try {
-      const mark = !doc.own && !doc.sharedOwner ? doc.no : owner ? `${owner}/${doc.no}` : null;   // 예시 문서는 번호, 저장된 문서는 기안자/번호
-      const acts = [];
-      if (owner) for (const [id, m] of Object.entries(apprShared.acts)) for (const [k, v] of Object.entries(m || {})) if (k.startsWith(`${owner}__${key}__`)) acts.push({ p: `appr/${id}/acts/${k}`, v });
-      const { sharedOwner, own, ...plain } = doc;
-      await apprTrash.put(`${owner || (doc.own ? 'local' : 'sample')}__${key}`, { kind: doc.own ? 'own' : doc.sharedOwner ? 'shared' : 'sample', owner: owner || null, no: doc.no, title: doc.title, form: doc.form.name,
-        drafter: doc.line[0]?.name || '', status: doc.status, json: apprStore.pack(plain), acts, mark, at: nowStamp(), by: `${ME.name} ${ME.rank}` });
-      if (mark) await saveApprCfg({ deleted: [...new Set([...APPR_CFG.deleted, mark])] });
-      if (db && owner) {
-        await db.doc(`appr/${owner}/docs/${key}`).delete();
-        for (const a of acts) await db.doc(a.p).delete().catch(() => {});
-        if (doc.own && apprStore.col) {
-          const snap = await apprStore.col.get();
-          for (const r of snap.docs) if (r.id.startsWith('appr_')) { try { if (JSON.parse(r.data().json).no === doc.no) await apprStore.col.doc(r.id).delete(); } catch (e) {} }
-        }
-      }
-      if (doc.own) {
-        delete apprStore.sent[doc.no];
-        try { const a = JSON.parse(localStorage.getItem(APPR_KEY)); if (a?.docs?.[doc.no]) { delete a.docs[doc.no]; localStorage.setItem(APPR_KEY, JSON.stringify(a)); } } catch (e) {}
-      }
-      if (owner && apprShared.docs[owner]) delete apprShared.docs[owner][key];
-      const i = APPR_DOCS.indexOf(doc); if (i >= 0) APPR_DOCS.splice(i, 1);
-      if (owner) delete apprShared.objs[`${owner}/${doc.no}`];
-      if (doc.own && apprStore.mode === 'local') apprStore.save();
-      tabs.filter(t => t.id.endsWith(`.view.${doc.uid}`)).map(t => t.id).forEach(closeTab);   // 열려 있던 문서보기 탭
+      await trashDoc(doc);
       apprChanged(); done?.();
       toast(`${doc.no} 문서를 임시저장소로 옮겼습니다.`);
     } catch (e) { toast('삭제하지 못했습니다. 저장 권한을 확인하고 잠시 후 다시 시도하세요.'); }
