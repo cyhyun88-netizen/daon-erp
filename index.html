@@ -619,6 +619,16 @@ table.grid { width: 100%; border-collapse: collapse; min-width: 640px; }
 @media (max-width: 860px) { .pe-head { grid-template-columns: 52px minmax(0, 1fr); } }
 .post-meta { display: flex; gap: 16px; flex-wrap: wrap; color: var(--ink-2); font-size: 13px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .post-body { line-height: 1.75; padding: 18px 0; max-width: 65ch; }
+.post-body.has-img { max-width: none; }
+/* 본문에 붙여넣은 캡처 그림: 누르면 원본 크기로 새 창 */
+.post-img { display: block; margin: 8px 0; }
+.post-img img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; cursor: zoom-in; background: var(--surface-2); min-height: 40px; }
+.pe-files .pe-thumb { width: 40px; height: 30px; object-fit: cover; border: 1px solid var(--line); border-radius: 3px; vertical-align: middle; margin-right: 6px; }
+.post-body.has-img { max-width: none; }
+/* 본문 그림 (캡처 붙여넣기): 본문 폭에 맞추고, 누르면 원본 크기로 새 창 */
+.post-img { display: block; margin: 8px 0; }
+.post-img img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; cursor: zoom-in; background: var(--surface-2); min-height: 40px; min-width: 80px; }
+.pe-thumb { width: 36px; height: 28px; object-fit: cover; border: 1px solid var(--line); border-radius: 3px; vertical-align: middle; margin-right: 4px; }
 
 .form { max-width: 720px; display: grid; gap: 14px; }
 .form-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; align-items: center; }
@@ -1938,7 +1948,27 @@ const canManagePost = (menu, row, key) => (menu.id === 'notice' ? canEditBoard(m
   : (menu.id === 'know' || menu.id === 'comm') && (row.who || '').startsWith(ME.name));
 const noEditMsg = (menu, key) => (menu.id === 'notice' ? NO_EDIT_MSG : key === 'know.rules' ? `회사규정은 담당자(${rulesOwnerLabel()})와 경영관리본부장만 올리고 고칠 수 있습니다.` : '쓴 사람만 고칠 수 있습니다.');
 const postNoun = menu => (menu.id === 'notice' ? '공지' : '글');
-const PE_MAX_FILES = 10, PE_MAX_MB = 20;   // 공지 첨부 한도
+const PE_MAX_FILES = 20, PE_MAX_MB = 20;   // 공지 첨부 한도 (본문에 붙인 캡처 그림 포함)
+/* 본문 그림: 글쓰기에서 캡처를 Ctrl+V 하면 첨부로 올리고 본문에 [그림: 파일이름] 표시를 넣는다. 글보기에서 그 자리에 그림을 보여 준다 */
+const isImgName = n => /\.(png|jpe?g|gif|webp|bmp)$/i.test(n || '');
+const PIMG_RE = /\[그림: ([^\]\n]+)\]/g;
+const blobSrcs = new WeakMap();
+async function fileSrc(x) {
+  if (x?.blob) { let u = blobSrcs.get(x.blob); if (!u) { u = URL.createObjectURL(x.blob); blobSrcs.set(x.blob, u); } return u; }
+  if (!x?.asset) return '';
+  return window.DAON_BLOB_URL ? await DAON_BLOB_URL(x.asset) : `/_blob/${x.asset}`;   // 비공개 저장소: 로그인한 상태로 임시 주소를 받는다
+}
+/* 글 본문 HTML + 본문에 들어간 그림 첨부 번호 */
+function postBodyHtml(row) {
+  const files = row.files || [], used = new Set();
+  const html = esc(row.body || '').replace(PIMG_RE, (m, n) => {
+    const i = files.findIndex(x => isImgName(x.name) && esc(x.name) === n);
+    if (i < 0) return m;
+    used.add(i);
+    return `<span class="post-img"><img data-pimg="${i}" alt="${n}"></span>`;
+  }).replace(/\n/g, '<br>').replace(/(<\/span>)<br>/g, '$1');
+  return { html, used };
+}
 /* 첨부 저장: 게시 링크에서는 downloads 기능(보는 사람이 저장을 확인), 로컬 파일로 열면 일반 내려받기 */
 async function saveAttachment(x) {
   if (!x?.blob && x?.asset) { try { const b = window.DAON_BLOB_GET ? await DAON_BLOB_GET(x.asset) : await fetch(`/_blob/${x.asset}`).then(r => { if (!r.ok) throw 0; return r.blob(); }); x = { ...x, blob: b }; } catch (e) { toast('첨부파일을 불러오지 못했습니다.'); return; } }
@@ -1972,7 +2002,7 @@ function postEditor(menu, key, row, after) {
         <label for="${pane.id}-cat">구분</label><select class="field" id="${pane.id}-cat">${cats.map(c => `<option ${c === cat ? 'selected' : ''}>${c}</option>`).join('')}</select>
         <label for="${pane.id}-title">제목</label><input class="field" id="${pane.id}-title" value="${esc(row?.title || '')}" placeholder="${menu.id === 'notice' ? '예: 11월 월마감 일정 안내' : '제목을 입력하세요'}" autocomplete="off">
         ${isReport ? `<label for="${pane.id}-proj">현장</label><select class="field pe-proj" id="${pane.id}-proj"><option value="">공통</option>${PROJECTS.map(([n, no]) => `<option value="${no}" ${no === row?.proj ? 'selected' : ''}>[${no}] ${esc(n)}</option>`).join('')}</select>` : ''}</div>
-      <textarea class="field pe-body" id="${pane.id}-body" aria-label="${noun} 내용" placeholder="${noun === '공지' ? '공지' : '글'} 내용을 입력하세요">${esc(row?.body || '')}</textarea>
+      <textarea class="field pe-body" id="${pane.id}-body" aria-label="${noun} 내용" placeholder="${noun === '공지' ? '공지' : '글'} 내용을 입력하세요&#10;캡처한 화면은 이곳에 Ctrl+V 하면 본문에 그림으로 들어갑니다">${esc(row?.body || '')}</textarea>
       <section class="pe-files" aria-label="첨부파일">
         <div class="pe-files-h"><b>첨부파일</b><span class="crumb">최대 ${PE_MAX_FILES}개 · 파일당 ${PE_MAX_MB}MB까지</span><span class="spacer"></span><span class="num crumb" data-fsum></span></div>
         <div class="dropzone" data-drop><label class="btn sm" for="${pane.id}-file">파일선택</label><input id="${pane.id}-file" type="file" multiple hidden><span>또는 파일을 이곳에 끌어다 놓으세요</span></div>
@@ -1982,9 +2012,35 @@ function postEditor(menu, key, row, after) {
     // 첨부: 이 화면에서 고르는 동안은 files에 모았다가 [등록]·[수정] 때 글에 붙인다 (수정 시 기존 첨부부터 시작)
     let files = [...(row?.files || [])];
     const drawFiles = () => {
-      pane.querySelector('[data-files]').innerHTML = files.map((x, i) => `<li><span>${icon('clip')} ${esc(x.name)}</span><span class="num">${fmtSize(x.size)} <button type="button" class="btn xs" data-fdel="${i}" aria-label="${esc(x.name)} 빼기">삭제</button></span></li>`).join('');
+      const ul = pane.querySelector('[data-files]');
+      ul.innerHTML = files.map((x, i) => `<li><span>${isImgName(x.name) ? `<img class="pe-thumb" data-th="${i}" alt="">` : icon('clip')} ${esc(x.name)}</span><span class="num">${fmtSize(x.size)} <button type="button" class="btn xs" data-fdel="${i}" aria-label="${esc(x.name)} 빼기">삭제</button></span></li>`).join('');
+      ul.querySelectorAll('[data-th]').forEach(im => fileSrc(files[+im.dataset.th]).then(u => { if (u) im.src = u; }).catch(() => {}));
       pane.querySelector('[data-fsum]').textContent = files.length ? `${files.length}개 · ${fmtSize(files.reduce((s, x) => s + x.size, 0))}` : '';
     };
+    // 캡처 붙여넣기 · 그림 끌어놓기: 첨부에 넣고 커서 자리에 [그림: 이름] 표시
+    const pad = n => String(n).padStart(2, '0');
+    const addInline = list => {
+      for (const f of list) {
+        if (files.length >= PE_MAX_FILES) { toast(`첨부(그림 포함)는 ${PE_MAX_FILES}개까지 넣을 수 있습니다.`); break; }
+        if (f.size > PE_MAX_MB * 1048576) { toast(`그림 한 장은 ${PE_MAX_MB}MB까지 넣을 수 있습니다.`); continue; }
+        const d = new Date(), ext = (f.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+        let name = f.name && f.name !== 'image.png' && isImgName(f.name) ? f.name : `캡처_${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.${ext}`;
+        for (let k = 2; files.some(x => x.name === name); k++) name = name.replace(/(_\d+)?(\.\w+)$/, `_${k}$2`);
+        files.push({ name, size: f.size, blob: new File([f], name, { type: f.type }) });
+        const before = bd.value.slice(0, bd.selectionStart);
+        bd.setRangeText(`${before && !before.endsWith('\n') ? '\n' : ''}[그림: ${name}]\n`, bd.selectionStart, bd.selectionEnd, 'end');
+      }
+      drawFiles();
+    };
+    const imgsOf = dt => [...(dt?.files || [])].filter(f => f.type.startsWith('image/'));
+    bd.addEventListener('paste', e => { const im = imgsOf(e.clipboardData); if (!im.length) return; e.preventDefault(); addInline(im); });
+    bd.addEventListener('dragover', e => { if ([...(e.dataTransfer?.items || [])].some(i => i.kind === 'file')) e.preventDefault(); });
+    bd.addEventListener('drop', e => {
+      const all = [...(e.dataTransfer?.files || [])]; if (!all.length) return;
+      e.preventDefault();
+      const im = all.filter(f => f.type.startsWith('image/'));
+      addInline(im); addFiles(all.filter(f => !im.includes(f)));
+    });
     const addFiles = list => {
       for (const f of list) {
         if (files.length >= PE_MAX_FILES) { toast(`첨부는 ${PE_MAX_FILES}개까지 올릴 수 있습니다.`); break; }
@@ -1999,7 +2055,12 @@ function postEditor(menu, key, row, after) {
     drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
     drop.addEventListener('dragleave', () => drop.classList.remove('over'));
     drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); });
-    pane.querySelector('[data-files]').addEventListener('click', e => { const b = e.target.closest('[data-fdel]'); if (b) { files.splice(+b.dataset.fdel, 1); drawFiles(); } });
+    pane.querySelector('[data-files]').addEventListener('click', e => {
+      const b = e.target.closest('[data-fdel]'); if (!b) return;
+      const [x] = files.splice(+b.dataset.fdel, 1);
+      if (x && isImgName(x.name)) bd.value = bd.value.split(`[그림: ${x.name}]\n`).join('').split(`[그림: ${x.name}]`).join('');   // 본문의 그림 표시도 뺀다
+      drawFiles();
+    });
     drawFiles();
     setTimeout(() => ti.focus());
     pane.querySelector('[data-pcancel]').onclick = () => {
@@ -5656,15 +5717,22 @@ function openPost(menu, row, fromKey) {
   addTab(tabId, `글 #${row.no}`, pane => {
     // 수정·삭제 버튼: 공지사항은 경영관리본부 직원, 지식관리는 쓴 사람에게만
     const manage = canManagePost(menu, row, fromKey), noun = postNoun(menu);
+    const pb = postBodyHtml(row), listed = (row.files || []).map((x, i) => [x, i]).filter(([, i]) => !pb.used.has(i));   // 본문에 넣은 그림은 첨부 목록에서 뺀다
     pane.innerHTML = `<article class="post">
       <div class="screen-head"><h2>${catTag(row.cat)}${esc(row.title)}</h2>${menu.id === 'doc' ? `<span class="sh-right"><span class="crumb">${esc(menu.name)}</span>${printBtn()}</span>` : `<span class="crumb">${esc(menu.name)}</span>`}</div>
       <div class="post-meta"><span>작성자 ${esc(row.who)}</span><span class="num">${row.date}</span><span>조회 <span class="num">${row.views}</span></span>${fromKey === 'know.report' ? `<span>현장 ${esc(projLabel(row.proj))}</span>` : ''}${row.edited ? `<span>수정 ${esc(row.edited)}</span>` : ''}</div>
-      <div class="post-body">${row.body ? esc(row.body).replace(/\n/g, '<br>') : '예시 본문입니다. 실제 시스템에서는 게시글 ID로 서버에서 본문과 첨부파일을 불러와 이 자리에 표시합니다.<br><br>상세 화면도 새 탭으로 열리기 때문에, 목록 탭은 검색 조건과 스크롤 위치를 그대로 유지합니다.'}</div>
-      ${row.files?.length ? `<div class="post-files"><b>첨부파일 ${row.files.length}개</b><ul class="file-list">${row.files.map((x, i) => `<li><button type="button" class="linkish" data-fdl="${i}">${icon('clip')} ${esc(x.name)}</button><span class="num">${fmtSize(x.size)}</span></li>`).join('')}</ul></div>` : ''}
+      <div class="post-body${pb.used.size ? ' has-img' : ''}">${row.body ? pb.html : '예시 본문입니다. 실제 시스템에서는 게시글 ID로 서버에서 본문과 첨부파일을 불러와 이 자리에 표시합니다.<br><br>상세 화면도 새 탭으로 열리기 때문에, 목록 탭은 검색 조건과 스크롤 위치를 그대로 유지합니다.'}</div>
+      ${listed.length ? `<div class="post-files"><b>첨부파일 ${listed.length}개</b><ul class="file-list">${listed.map(([x, i]) => `<li><button type="button" class="linkish" data-fdl="${i}">${icon('clip')} ${esc(x.name)}</button><span class="num">${fmtSize(x.size)}</span></li>`).join('')}</ul></div>` : ''}
       <div class="form-actions">${manage ? '<button class="btn" type="button" data-pedit>수정</button><button class="btn" type="button" data-pdel>삭제</button>' : ''}<button class="btn" type="button" data-back>목록으로</button></div></article>`;
     pane.querySelector('[data-back]').onclick = () => (tabs.some(t => t.id === fromKey) ? activate(fromKey) : openTab(fromKey));
     // 첨부 내려받기: 이 브라우저에서 올린 파일을 그대로 저장 (실제 서버에서는 파일 서버 주소로 내려받는다)
     pane.querySelectorAll('[data-fdl]').forEach(b => b.onclick = () => saveAttachment(row.files[+b.dataset.fdl]));
+    // 본문 그림: 주소를 받아 넣고, 누르면 원본을 새 창으로
+    pane.querySelectorAll('[data-pimg]').forEach(im => {
+      const x = row.files[+im.dataset.pimg];
+      fileSrc(x).then(u => { if (u) im.src = u; }).catch(() => { im.alt = `${x.name} (그림을 불러오지 못했습니다)`; });
+      im.onclick = () => { if (im.src) window.open(im.src, '_blank', 'noopener'); };
+    });
     if (!manage) return;
     pane.querySelector('[data-pedit]').onclick = () => postEditor(menu, fromKey, row, () => { closeTab(tabId); openPost(menu, row, fromKey); });
     pane.querySelector('[data-pdel]').onclick = () => confirmBox(`${noun} 삭제`, `<b>${esc(row.title)}</b><br>이 ${noun === '글' ? '글을' : '공지를'} 삭제할까요? 삭제하면 되돌릴 수 없습니다.`, '삭제', () => {
