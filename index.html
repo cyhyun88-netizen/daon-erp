@@ -6097,6 +6097,7 @@ const siteStore = {
     db.doc('config/approval').onSnapshot(s => setApprCfg(s.exists ? s.data() : null), () => {});   // 관리자가 정한 고정 결재선
     signStore.connect(db);   // 관리자가 등록한 직원별 결재 서명
     db.doc('config/theme').onSnapshot(s => { if (s.exists && s.data().font) setSavedFont(s.data().font); }, () => {});   // 관리자가 고른 화면 서체
+    db.doc('config/assets').onSnapshot(s => applyAssets(s.exists ? s.data() : null), () => {});   // 회사차량 · 대여 물품 목록
     db.doc('config/cert').onSnapshot(s => applyCertDepts(s.exists ? s.data().depts : null), () => {});   // 증명서 발급 부서
     db.doc('config/holidays').onSnapshot(s => { applyHolidays(s.exists ? s.data() : {}); if (typeof wkViews !== 'undefined') wkViews.forEach(p => (p.isConnected ? p.wkDraw() : wkViews.delete(p))); }, () => {});   // 회사 휴일
     db.doc('config/otproxy').onSnapshot(s => { const d = s.exists ? s.data() : {}; applyOtProxy(d.map || {}, d.final !== undefined ? d.final : '민경필', d.mgr); }, () => {});   // 연장근로 대리 승인자
@@ -8361,6 +8362,8 @@ const ADMIN_ITEMS = [
   ['rules', '결재선 규칙', '직원이 결재선지정에서 할 수 있는 것 · 관리부서 필수 양식 · 회사 공용 결재선', h => apprRulesPanel(h)],
   ['docs', '결재 문서', '회사의 모든 결재 문서 보기 · 내용 수정 · 삭제', h => adminDocs(h)],
   ['trash', '임시저장소', '삭제한 결재 문서 복원 · 완전 삭제', h => adminTrash(h)],
+  ['car', '차량 관리', '회사차량 추가 · 차종 · 사용 부서 · 처음 주행거리 수정 · 삭제, 차량별 승인 대기 · 사용 예정 · 운행 기록 수', h => carAdmin(h)],
+  ['rent', '물품대여 관리', '대여 물품 추가 · 품목 · 이름 수정 · 삭제, 물품별 지금 대여 상태 · 승인 대기 · 대여 기록 수', h => rentAdmin(h)],
   ['cons', '공사관리', '현장 추가 · 현장명 · 전화 · 숨기기, 현장별 개요와 날짜별 기록 수정', h => adminSites(h)],
   ['done', '준공현장', '준공 처리한 현장 목록 · 개요와 날짜별 기록 보기 · 진행으로 되돌리기', h => adminDone(h)],
   ['hidden', '숨긴현장', '숨긴 현장 목록 · 개요와 날짜별 기록 보기 · 다시 보이기 · 삭제', h => adminHiddenSites(h)],
@@ -8376,6 +8379,7 @@ const ADMIN_GROUPS = [
   ['', ['home']],
   ['직원 · 급여', ['dept', 'staff', 'retired', 'duty', 'holi', 'pay', 'pin', 'otproxy', 'certdept']],
   ['전자결재', ['sign', 'reqline', 'line', 'rules', 'docs', 'trash']],
+  ['업무관리', ['car', 'rent']],
   ['공사관리', ['cons', 'done', 'hidden', 'sites']],
   ['계정 · 보안', ['acct', 'ids', 'pw', 'admins']],
   ['화면', ['font']],
@@ -9571,7 +9575,7 @@ const RENTS = [
   { id: 3, code: '0501', from: dayAfter(5), fh: 9, to: dayAfter(7), th: 17, who: ME.name, user: '유다인', purpose: '녹양역세권 현장 공정 촬영', date: ymd(today), status: '신청' },
   { id: 4, code: '0302', from: daysAgo(20), fh: 9, to: daysAgo(15), th: 17, who: '신지원', user: '신지원', purpose: '현장 사무실 임시 사용', date: daysAgo(22), status: '반납', ret: daysAgo(15) },
 ];
-const rentItem = code => RENT_ITEMS.find(x => x[0] === code);
+const rentItem = code => RENT_ITEMS.find(x => x[0] === code) || [code, '삭제한 물품', code];   // 관리자가 목록에서 뺀 물품도 지난 기록은 보이게
 const rentActive = r => r.status === '신청' || r.status === '승인';
 const rentOn = (code, d, exceptId) => RENTS.find(r => r.id !== exceptId && r.code === code && rentActive(r) && r.from <= d && d <= r.to);
 function rentEditor(code, date, row, done) {
@@ -10132,6 +10136,151 @@ function carEditor(row, preset, done) {
 
 const wkViews = new Set();   // 열린 업무관리 화면: 신청·승인하면 차량신청·운행일지를 함께 다시 그린다
 const wkRefresh = () => { wkViews.forEach(p => (p.isConnected ? p.wkDraw() : wkViews.delete(p))); notiChanged(); };
+/* ── 관리자 › 차량 관리 · 물품대여 관리: 회사차량 · 대여 물품 목록 (config/assets). 저장한 적이 없으면 처음 예시 목록
+   config/assets = { cars: [{ plate, model, dept, km0 }], items: [{ code, cat, name }] } (로컬 파일: localStorage) */
+const ASSET_LKEY = 'daon-assets-v1';
+const CARS0 = CARS.map(c => [...c]), CAR_KM00 = { ...CAR_KM0 }, RENT_ITEMS0 = RENT_ITEMS.map(x => [...x]);
+const carLabel = (model, dept) => `${model}${dept ? ` (${dept})` : ''}`;
+const carParts = n => ({ model: n.replace(/\s*\(.+\)$/, ''), dept: (n.match(/\((.+)\)$/) || [])[1] || '' });
+let assetCfg = null;   // null = 아직 저장한 적 없음 (예시 목록)
+const assetViews = new Set();
+function applyAssets(c) {
+  assetCfg = c && (Array.isArray(c.cars) || Array.isArray(c.items)) ? c : null;
+  const cars = Array.isArray(assetCfg?.cars) ? assetCfg.cars.filter(x => x && x.plate).map(x => [x.plate, carLabel(x.model || '', x.dept || '')]) : CARS0.map(x => [...x]);
+  const km = Array.isArray(assetCfg?.cars) ? Object.fromEntries(assetCfg.cars.filter(x => x && x.plate).map(x => [x.plate, Number(x.km0) || 0])) : { ...CAR_KM00 };
+  const items = Array.isArray(assetCfg?.items) ? assetCfg.items.filter(x => x && x.code).map(x => [x.code, x.cat || '기타', x.name || x.code]) : RENT_ITEMS0.map(x => [...x]);
+  CARS.splice(0, CARS.length, ...cars);
+  Object.keys(CAR_KM0).forEach(k => delete CAR_KM0[k]); Object.assign(CAR_KM0, km);
+  RENT_ITEMS.splice(0, RENT_ITEMS.length, ...items);
+  RENT_CATS.splice(0, RENT_CATS.length, '전체', ...new Set(RENT_ITEMS.map(x => x[1])));
+  if (FORM_SPECS['차량운행일지']?.opts) FORM_SPECS['차량운행일지'].opts.car = CARS.map(c => `${c[0]} ${c[1]}`);
+  assetViews.forEach(f => (f() === false ? assetViews.delete(f) : 0));
+  wkRefresh();
+}
+const assetSnapshot = () => ({
+  cars: CARS.map(([plate, n]) => ({ plate, ...carParts(n), km0: CAR_KM0[plate] || 0 })),
+  items: RENT_ITEMS.map(([code, cat, name]) => ({ code, cat, name })),
+});
+async function saveAssets(part) {
+  const cfg = { ...assetSnapshot(), ...part, at: new Date().toISOString(), by: ME.name };
+  if (siteStore.remote) await siteStore.remote.doc('config/assets').set(cfg);
+  else localStorage.setItem(ASSET_LKEY, JSON.stringify(cfg));
+  applyAssets(cfg);
+}
+/* 관리자 › 차량 관리 */
+function carAdmin(host) {
+  host.innerHTML = `<p class="se-note" style="margin-top:0">여기 있는 차량이 <b>업무관리 › 차량신청 · 차량운행일지</b>와 결재 양식의 회사차량 선택 목록에 나옵니다. 신청 승인은 업무관리 › 차량신청에서 합니다.${assetCfg ? '' : ' <b>지금은 처음 예시 차량입니다.</b> 실제 차량으로 고치거나 지우고 추가하세요.'}</p>
+    <div class="toolbar"><button class="btn primary" type="button" data-cadd>＋ 차량 추가</button><span class="spacer"></span><span class="crumb" data-csum></span><button class="btn sm" type="button" data-cgo>차량신청 화면으로</button></div>
+    <div class="table-wrap" style="margin-top:10px"><table class="grid"><thead><tr><th>차량번호</th><th>차종</th><th>사용 부서</th><th class="r">처음 주행거리(km)</th><th class="r">최근 주행거리(km)</th><th class="c">승인 대기</th><th class="c">사용 예정</th><th class="c">운행 기록</th><th class="c">관리</th></tr></thead><tbody></tbody></table></div>`;
+  const tb = host.querySelector('tbody'), now = () => carKey(ymd(new Date()), new Date().getHours());
+  const draw = () => {
+    if (!host.isConnected && host.dataset.drawn) return false;
+    host.dataset.drawn = 1;
+    host.querySelector('[data-csum]').textContent = `차량 ${CARS.length}대`;
+    tb.innerHTML = CARS.map(([p, n]) => { const { model, dept } = carParts(n), rs = CAR_REQS.filter(r => r.car === p);
+      return `<tr><td class="num"><b>${esc(p)}</b></td><td>${esc(model)}</td><td>${esc(dept || '-')}</td><td class="r num">${numK(CAR_KM0[p] || 0)}</td><td class="r num">${numK(carLastKm(p))}</td>
+        <td class="c">${rs.filter(r => r.status === '신청').length || '-'}</td><td class="c">${rs.filter(r => r.status === '완료' && carKey(r.to, r.th) >= now()).length || '-'}</td><td class="c">${rs.filter(r => r.status === '완료').length || '-'}</td>
+        <td class="c" style="white-space:nowrap"><button class="btn sm" type="button" data-cedit="${esc(p)}">수정</button> <button class="btn sm" type="button" data-cdel="${esc(p)}">삭제</button></td></tr>`; }).join('')
+      || '<tr><td colspan="9" class="c crumb">등록한 차량이 없습니다. [＋ 차량 추가]를 누르세요.</td></tr>';
+    return true;
+  };
+  const edit = p => {
+    const cur = p ? { plate: p, ...carParts(CARS.find(c => c[0] === p)[1]), km0: CAR_KM0[p] || 0 } : { plate: '', model: '', dept: '', km0: '' };
+    const m = modal(p ? `차량 수정 · ${p}` : '차량 추가', `<div class="form wk-form">
+        ${frow('차량번호', `<input class="field" name="plate" value="${esc(cur.plate)}" placeholder="예: 12가 3456" ${p ? 'readonly' : ''}>${p ? '<span class="crumb">차량번호는 신청 기록과 이어져 있어 바꿀 수 없습니다. 바꾸려면 새로 추가하세요.</span>' : ''}`)}
+        ${frow('차종', `<input class="field" name="model" value="${esc(cur.model)}" placeholder="예: 쏘나타">`)}
+        ${frow('사용 부서', `<select class="field" name="dept"><option value="">공용 (부서 없음)</option>${[...new Set([...DEPTS, cur.dept].filter(Boolean))].map(d => `<option ${d === cur.dept ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select>`)}
+        ${frow('처음 주행거리(km)', `<input class="field num" name="km0" inputmode="numeric" value="${esc(String(cur.km0))}" placeholder="계기판 누적 km"><span class="crumb">운행일지의 첫 출발 주행거리로 씁니다.</span>`)}
+        <p class="wk-err" hidden></p></div>`,
+      `<button class="btn" type="button" data-close>취소</button><button class="btn primary" type="button" data-ok>${p ? '저장' : '추가'}</button>`, true);
+    m.el.querySelector('[data-ok]').onclick = async () => {
+      const plate = wkV(m, 'plate').replace(/\s+/g, ' '), model = wkV(m, 'model'), dept = wkV(m, 'dept'), km = wkV(m, 'km0').replace(/[,\s]/g, '');
+      if (!plate) return wkErr(m, '차량번호를 입력하세요.');
+      if (!p && CARS.some(c => c[0].replace(/\s/g, '') === plate.replace(/\s/g, ''))) return wkErr(m, '이미 등록한 차량번호입니다.');
+      if (!model) return wkErr(m, '차종을 입력하세요.');
+      if (km && !/^\d+$/.test(km)) return wkErr(m, '주행거리는 숫자로 입력하세요.');
+      const s = assetSnapshot(), rec = { plate, model, dept, km0: Number(km) || 0 };
+      const cars = p ? s.cars.map(c => (c.plate === p ? rec : c)) : [...s.cars, rec];
+      try { await saveAssets({ cars }); } catch (er) { return wkErr(m, '저장하지 못했습니다. 잠시 후 다시 시도하세요.'); }
+      m.close(); toast(p ? '차량 정보를 저장했습니다.' : `${plate} 차량을 추가했습니다.`);
+    };
+  };
+  host.addEventListener('click', e => {
+    if (e.target.closest('[data-cadd]')) edit(null);
+    if (e.target.closest('[data-cgo]')) openTab('work.car');
+    const b = e.target.closest('[data-cedit],[data-cdel]'); if (!b) return;
+    if (b.dataset.cedit) { edit(b.dataset.cedit); return; }
+    const p = b.dataset.cdel, live = CAR_REQS.filter(r => r.car === p && (r.status === '신청' || (r.status === '완료' && carKey(r.to, r.th) >= now())));
+    if (live.length) { toast(`승인 대기 · 사용 예정인 신청이 ${live.length}건 있어 삭제할 수 없습니다. 업무관리 › 차량신청에서 먼저 정리하세요.`); return; }
+    confirmBox('차량 삭제', `<b>${esc(carName(p))}</b>을(를) 차량 목록에서 뺍니다.<br>지난 신청 · 운행 기록은 그대로 남지만 차량운행일지 목록에는 더 나오지 않습니다.`, '삭제', async () => {
+      try { await saveAssets({ cars: assetSnapshot().cars.filter(c => c.plate !== p) }); } catch (er) { toast('저장하지 못했습니다.'); return; }
+      toast('차량을 삭제했습니다.');
+    });
+  });
+  assetViews.add(draw); wkViews.add(Object.assign(host, { wkDraw: draw }));
+  draw();
+}
+/* 관리자 › 물품대여 관리 */
+function rentAdmin(host) {
+  let cat = '전체';
+  host.innerHTML = `<p class="se-note" style="margin-top:0">여기 있는 물품이 <b>업무관리 › 물품대여</b>의 대여 현황에 나옵니다. 품목(노트북 · 카메라 등)이 위쪽 탭이 됩니다. 신청 승인 · 반납 처리는 업무관리 › 물품대여에서 합니다.${assetCfg ? '' : ' <b>지금은 처음 예시 물품입니다.</b> 실제 물품으로 고치거나 지우고 추가하세요.'}</p>
+    <div class="toolbar"><button class="btn primary" type="button" data-iadd>＋ 물품 추가</button><select class="field sm" data-icat aria-label="품목"></select><span class="spacer"></span><span class="crumb" data-isum></span><button class="btn sm" type="button" data-igo>물품대여 화면으로</button></div>
+    <div class="table-wrap" style="margin-top:10px"><table class="grid"><thead><tr><th>코드</th><th>품목</th><th>물품</th><th class="c">지금</th><th>대여자 · 기간</th><th class="c">승인 대기</th><th class="c">대여 기록</th><th class="c">관리</th></tr></thead><tbody></tbody></table></div>`;
+  const tb = host.querySelector('tbody'), cs = host.querySelector('[data-icat]');
+  const draw = () => {
+    if (!host.isConnected && host.dataset.drawn) return false;
+    host.dataset.drawn = 1;
+    if (!RENT_CATS.includes(cat)) cat = '전체';
+    cs.innerHTML = RENT_CATS.map(c => `<option ${c === cat ? 'selected' : ''}>${esc(c)}</option>`).join('');
+    host.querySelector('[data-isum]').textContent = `물품 ${RENT_ITEMS.length}개`;
+    const d = ymd(today);
+    tb.innerHTML = RENT_ITEMS.filter(x => cat === '전체' || x[1] === cat).map(([code, kind, name]) => { const rs = RENTS.filter(r => r.code === code), on = rentOn(code, d);
+      return `<tr><td class="num">${esc(code)}</td><td>${esc(kind)}</td><td><b>${esc(name)}</b></td>
+        <td class="c">${on ? (on.status === '승인' ? '<span class="pill prog">대여중</span>' : '<span class="pill wait">신청중</span>') : '<span class="pill done">대여가능</span>'}</td>
+        <td>${on ? esc(`${wkName(on.user || on.who)} · ${on.from} ~ ${on.to}`) : '-'}</td>
+        <td class="c">${rs.filter(r => r.status === '신청').length || '-'}</td><td class="c">${rs.length || '-'}</td>
+        <td class="c" style="white-space:nowrap"><button class="btn sm" type="button" data-iedit="${esc(code)}">수정</button> <button class="btn sm" type="button" data-idel="${esc(code)}">삭제</button></td></tr>`; }).join('')
+      || '<tr><td colspan="8" class="c crumb">등록한 물품이 없습니다. [＋ 물품 추가]를 누르세요.</td></tr>';
+    return true;
+  };
+  const nextCode = () => String(Math.max(0, ...RENT_ITEMS.map(x => +x[0] || 0)) + 1).padStart(4, '0');
+  const edit = code => {
+    const it = code ? rentItem(code) : null, cats = [...new Set(RENT_ITEMS.map(x => x[1]))];
+    const m = modal(code ? `물품 수정 · ${it[2]}` : '물품 추가', `<div class="form wk-form">
+        ${frow('코드', `<input class="field" name="code" value="${esc(code || nextCode())}" ${code ? 'readonly' : ''}><span class="crumb">${code ? '코드는 대여 기록과 이어져 있어 바꿀 수 없습니다.' : '관리용 번호 (자동으로 다음 번호를 넣었습니다)'}</span>`)}
+        ${frow('품목', `<input class="field" name="cat" list="rent-cats" value="${esc(it ? it[1] : cat !== '전체' ? cat : '')}" placeholder="예: 노트북 · 카메라 · 측량장비"><datalist id="rent-cats">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>`)}
+        ${frow('물품 이름', `<input class="field wk-wide" name="name" value="${esc(it ? it[2] : '')}" placeholder="예: 노트북_4 (LG 그램)">`)}
+        <p class="wk-err" hidden></p></div>`,
+      `<button class="btn" type="button" data-close>취소</button><button class="btn primary" type="button" data-ok>${code ? '저장' : '추가'}</button>`, true);
+    m.el.querySelector('[data-ok]').onclick = async () => {
+      const c = wkV(m, 'code'), k = wkV(m, 'cat'), n = wkV(m, 'name');
+      if (!c) return wkErr(m, '코드를 입력하세요.');
+      if (!code && RENT_ITEMS.some(x => x[0] === c)) return wkErr(m, '이미 쓰는 코드입니다.');
+      if (!k) return wkErr(m, '품목을 입력하세요.');
+      if (!n) return wkErr(m, '물품 이름을 입력하세요.');
+      if (RENT_ITEMS.some(x => x[0] !== code && x[2] === n)) return wkErr(m, '같은 이름의 물품이 있습니다. 번호 등을 붙여 구분하세요.');
+      const s = assetSnapshot(), rec = { code: c, cat: k, name: n };
+      const items = code ? s.items.map(x => (x.code === code ? rec : x)) : [...s.items, rec];
+      try { await saveAssets({ items }); } catch (er) { return wkErr(m, '저장하지 못했습니다. 잠시 후 다시 시도하세요.'); }
+      m.close(); toast(code ? '물품 정보를 저장했습니다.' : `${n}을(를) 추가했습니다.`);
+    };
+  };
+  cs.onchange = () => { cat = cs.value; draw(); };
+  host.addEventListener('click', e => {
+    if (e.target.closest('[data-iadd]')) edit(null);
+    if (e.target.closest('[data-igo]')) openTab('work.prod');
+    const b = e.target.closest('[data-iedit],[data-idel]'); if (!b) return;
+    if (b.dataset.iedit) { edit(b.dataset.iedit); return; }
+    const code = b.dataset.idel, it = rentItem(code), live = RENTS.filter(r => r.code === code && rentActive(r));
+    if (live.length) { toast(`신청 · 대여 중인 건이 ${live.length}건 있어 삭제할 수 없습니다. 업무관리 › 물품대여에서 반납 처리하거나 신청을 정리하세요.`); return; }
+    confirmBox('물품 삭제', `<b>${esc(it[2])}</b> (${esc(it[1])} · ${esc(code)})을(를) 물품 목록에서 뺍니다.<br>지난 대여 기록은 그대로 남습니다.`, '삭제', async () => {
+      try { await saveAssets({ items: assetSnapshot().items.filter(x => x.code !== code) }); } catch (er) { toast('저장하지 못했습니다.'); return; }
+      toast('물품을 삭제했습니다.');
+    });
+  });
+  assetViews.add(draw); wkViews.add(Object.assign(host, { wkDraw: draw }));
+  draw();
+}
 /* 업무관리 기록을 공용 저장소와 잇는다: 예시 기록은 그대로, 저장된 기록(sid)은 저장소 값으로 바꿔 끼운다. 화면용 번호(id)는 기록마다 고정 */
 const SH_IDS = {}; let SH_SEQ = 100000;
 const bindShared = (kind, arr, map = r => r) => shared.on(kind, list => {
@@ -10446,11 +10595,12 @@ Object.assign(RENDERERS, {
     draw();
   },
   carlog(pane, menu, item) {
-    let plate = CARS[0][0];
+    let plate = (CARS[0] || [''])[0];
     pane.innerHTML = head(menu, item) + `<div class="carlog-wrap"><ul class="carlog-list" data-list></ul>
       <div><div class="table-wrap"><table class="grid"><thead><tr><th class="c">순번</th><th>신청일자</th><th>원가부서</th><th>사용자</th><th>사업</th><th>시작일</th><th>종료일</th><th>운행목적</th><th>행선지</th><th class="r">주행/Km(출발)</th><th class="r">주행/Km(도착)</th><th class="r">구간/Km</th><th>비고</th></tr></thead><tbody></tbody></table></div>
       <p class="crumb">승인(완료)된 차량신청이 운행 기록으로 쌓입니다. 주행거리는 차량신청 › 내가 신청한 리스트에서 넣습니다.</p></div></div>`;
     const draw = () => {
+      if (!CARS.some(c => c[0] === plate)) plate = (CARS[0] || [''])[0];   // 관리자가 차량을 빼면 첫 차량으로
       const logs = p => CAR_REQS.filter(r => r.car === p && r.status === '완료').sort((a, b) => a.from.localeCompare(b.from) || a.fh - b.fh);
       pane.querySelector('[data-list]').innerHTML = CARS.map(([p, n]) => `<li><button type="button" data-car="${p}" class="${p === plate ? 'on' : ''}"><span>${esc(n.replace(/\s*\(.+\)$/, ''))} [${p}]</span><span class="num crumb">${logs(p).length}</span></button></li>`).join('');
       const rows = logs(plate), sum = rows.reduce((s, r) => s + (r.km2 !== '' && r.km1 !== '' ? r.km2 - r.km1 : 0), 0);
@@ -11477,6 +11627,7 @@ if (!(window.claude && typeof window.claude.use === 'function')) {   // 로컬 �
   try { const dc = JSON.parse(localStorage.getItem(DEPT_LKEY)); if (dc) applyDepts(dc); } catch (e) {}
   try { const pc = JSON.parse(localStorage.getItem(PROJ_KEY)); if (pc) applyProjects(pc); } catch (e) {}
   try { const ae = JSON.parse(localStorage.getItem('daon-admin-v1')); if (Array.isArray(ae) && ae.length) ADMIN_EMPS = ae; } catch (e) {}
+  try { const as = JSON.parse(localStorage.getItem(ASSET_LKEY)); if (as) applyAssets(as); } catch (e) {}
   try { const cd = JSON.parse(localStorage.getItem(CERT_CFG_LKEY)); if (Array.isArray(cd)) CERT_DEPTS = cd; } catch (e) {}
   try { const px = JSON.parse(localStorage.getItem(OT_PROXY_LKEY)); if (px && typeof px === 'object') { if (px.map) { OT_PROXY = px.map; if (px.final !== undefined) OT_FINAL = px.final; if (Array.isArray(px.mgr) && px.mgr.length) OT_MGR = px.mgr; } else OT_PROXY = px; } } catch (e) {}
 }
