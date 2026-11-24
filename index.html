@@ -1352,6 +1352,31 @@ table.kv { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   #print-root.print-paper .paper { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
   #print-root .form-preview { color: #142634; }
 }
+
+/* 날짜 고르기 달력 (PC) */
+@media (pointer: fine) {
+  input[type="date"]::-webkit-calendar-picker-indicator { display: none; }
+  input[type="date"]:not(:disabled):not([readonly]) { cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%237a8a99' stroke-width='2' stroke-linecap='round'%3E%3Crect x='3' y='5' width='18' height='16' rx='2'/%3E%3Cpath d='M3 10h18M8 3v4M16 3v4'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 6px center; padding-right: 26px; }
+}
+.dp-pop { position: fixed; z-index: 1000; width: 264px; padding: 10px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px rgba(0,0,0,.18); font-size: 13px; user-select: none; }
+.dp-head { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
+.dp-head select { flex: 1; min-width: 0; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
+.dp-nav { width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 17px; line-height: 1; cursor: pointer; }
+.dp-nav:hover { background: var(--surface-2); }
+.dp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.dp-dow span { text-align: center; font-size: 12px; font-weight: 600; color: var(--ink-2); padding: 2px 0 4px; }
+.dp-grid button { height: 32px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: inherit; cursor: pointer; }
+.dp-grid button:hover:not(:disabled) { background: var(--accent-soft); }
+.dp-grid .sun { color: #d64545; } .dp-grid .sat { color: #2f6fd6; }
+.dp-grid button.today { box-shadow: inset 0 0 0 1.5px var(--accent); font-weight: 700; }
+.dp-grid button.on { background: var(--accent); color: var(--accent-ink, #fff); font-weight: 700; }
+.dp-grid button:disabled { opacity: .3; cursor: default; }
+.dp-foot { display: flex; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.dp-foot span { flex: 1; }
+.dp-foot button { padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+.dp-foot button:hover:not(:disabled) { background: var(--surface-2); }
+.dp-foot button:disabled { opacity: .4; cursor: default; }
+@media print { .dp-pop { display: none !important; } }
 </style>
 
 <div class="app" id="app">
@@ -11747,6 +11772,81 @@ if (!(window.claude && typeof window.claude.use === 'function')) {   // 로컬 �
   try { const cd = JSON.parse(localStorage.getItem(CERT_CFG_LKEY)); if (Array.isArray(cd)) CERT_DEPTS = cd; } catch (e) {}
   try { const px = JSON.parse(localStorage.getItem(OT_PROXY_LKEY)); if (px && typeof px === 'object') { if (px.map) { OT_PROXY = px.map; if (px.final !== undefined) OT_FINAL = px.final; if (Array.isArray(px.mgr) && px.mgr.length) OT_MGR = px.mgr; } else OT_PROXY = px; } } catch (e) {}
 }
+/* ───────── 날짜 고르기 달력: 모든 날짜 칸(input type=date)에 브라우저 기본 달력 대신 한글 달력을 띄운다 (마우스 쓰는 PC만, 휴대폰은 기본 달력)
+   ‹ 2026년 11월 › · 일~토 · 공휴일 빨간색 · 오늘 표시 · [오늘] [지우기]. 칸에 숫자로 직접 입력도 그대로 된다 */
+(() => {
+  if (!window.matchMedia || !matchMedia('(pointer: fine)').matches) return;
+  let pop = null, inp = null, view = null;   // view = { y, m(0~11) }
+  const p2 = n => String(n).padStart(2, '0');
+  const key = (y, m, d) => `${y}-${p2(m + 1)}-${p2(d)}`;
+  const close = () => { pop?.remove(); pop = inp = null; };
+  const set = v => {
+    if (!inp) return;
+    inp.value = v; inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true }));
+    const el = inp; close(); el.focus();
+  };
+  const place = () => {
+    if (!pop || !inp) return;
+    const r = inp.getBoundingClientRect(), h = pop.offsetHeight, w = pop.offsetWidth;
+    const top = r.bottom + 4 + h > innerHeight && r.top - 4 - h > 0 ? r.top - 4 - h : r.bottom + 4;
+    pop.style.top = `${Math.max(4, top)}px`; pop.style.left = `${Math.max(4, Math.min(r.left, innerWidth - w - 4))}px`;
+  };
+  const draw = () => {
+    const { y, m } = view, first = new Date(y, m, 1).getDay(), days = new Date(y, m + 1, 0).getDate();
+    const min = inp.min || '', max = inp.max || '', cur = inp.value, td = ymd(new Date());
+    const ys = Array.from({ length: 21 }, (_, i) => y - 10 + i);
+    let cells = '';
+    for (let i = 0; i < first; i++) cells += '<span></span>';
+    for (let d = 1; d <= days; d++) {
+      const k = key(y, m, d), w = (first + d - 1) % 7, off = (min && k < min) || (max && k > max), hn = typeof holiName === 'function' ? holiName(k) : '';
+      cells += `<button type="button" data-d="${k}" class="${w === 0 || hn ? 'sun' : w === 6 ? 'sat' : ''}${k === td ? ' today' : ''}${k === cur ? ' on' : ''}" ${off ? 'disabled' : ''}${hn ? ` title="${esc(hn)}"` : ''}>${d}</button>`;
+    }
+    pop.innerHTML = `<div class="dp-head"><button type="button" class="dp-nav" data-mv="-1" aria-label="이전 달">‹</button>
+        <select data-y aria-label="연도">${ys.map(v => `<option value="${v}" ${v === y ? 'selected' : ''}>${v}년</option>`).join('')}</select>
+        <select data-m aria-label="월">${Array.from({ length: 12 }, (_, i) => `<option value="${i}" ${i === m ? 'selected' : ''}>${i + 1}월</option>`).join('')}</select>
+        <button type="button" class="dp-nav" data-mv="1" aria-label="다음 달">›</button></div>
+      <div class="dp-grid dp-dow">${'일월화수목금토'.split('').map((c, i) => `<span class="${i === 0 ? 'sun' : i === 6 ? 'sat' : ''}">${c}</span>`).join('')}</div>
+      <div class="dp-grid">${cells}</div>
+      <div class="dp-foot"><button type="button" data-today ${(min && td < min) || (max && td > max) ? 'disabled' : ''}>오늘</button>${inp.required ? '' : '<button type="button" data-clear>지우기</button>'}<span></span><button type="button" data-x>닫기</button></div>`;
+    place();
+  };
+  const open = el => {
+    if (inp === el) return;
+    close();
+    inp = el;
+    const v = /^\d{4}-\d{2}-\d{2}$/.test(el.value) ? el.value : ymd(new Date()), [y, m] = v.split('-').map(Number);
+    view = { y, m: m - 1 };
+    pop = document.createElement('div'); pop.className = 'dp-pop'; pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-label', '날짜 선택');
+    document.body.appendChild(pop);
+    pop.addEventListener('mousedown', e => { if (!e.target.closest('select')) e.preventDefault(); });   // 칸의 포커스를 뺏지 않는다
+    pop.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b || b.disabled) return;
+      if (b.dataset.d) set(b.dataset.d);
+      else if (b.dataset.mv) { const t = new Date(view.y, view.m + +b.dataset.mv, 1); view = { y: t.getFullYear(), m: t.getMonth() }; draw(); }
+      else if ('today' in b.dataset) set(ymd(new Date()));
+      else if ('clear' in b.dataset) set('');
+      else if ('x' in b.dataset) close();
+    });
+    pop.addEventListener('change', e => { if (e.target.matches('[data-y]')) view.y = +e.target.value; if (e.target.matches('[data-m]')) view.m = +e.target.value; draw(); });
+    draw();
+  };
+  const isDate = el => el && el.matches?.('input[type="date"]') && !el.disabled && !el.readOnly;
+  document.addEventListener('click', e => {
+    const el = e.target;
+    if (isDate(el)) { e.preventDefault(); open(el); return; }   // 브라우저 기본 달력 대신
+    if (pop && !pop.contains(el)) close();
+  }, true);
+  document.addEventListener('keydown', e => {
+    if (!pop) return;
+    if (e.key === 'Escape') { e.stopPropagation(); close(); }
+    else if (e.target === inp && e.key !== 'Tab') setTimeout(() => { if (pop && inp && /^\d{4}-\d{2}-\d{2}$/.test(inp.value)) { const [y, m] = inp.value.split('-').map(Number); view = { y, m: m - 1 }; draw(); } });   // 직접 입력하면 그 달로
+    else if (e.key === 'Tab') close();
+  }, true);
+  window.addEventListener('resize', close);
+  document.addEventListener('scroll', e => { if (pop && !pop.contains(e.target)) place(); }, true);
+  // 화면(탭)이 바뀌거나 창이 닫혀 칸이 사라지면 달력도 닫는다
+  setInterval(() => { if (pop && inp && !inp.isConnected) close(); }, 500);
+})();
 auth.boot();   // 로그인 화면 (공지 팝업은 로그인한 뒤에)
 workerStore.loadLocal();   // 로컬 파일: 이 브라우저에 저장한 투입 인원 명단
 payStore.loadLocal();   // 로컬 파일: 이 브라우저에 저장한 연봉 정보
