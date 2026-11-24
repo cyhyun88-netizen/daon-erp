@@ -1434,13 +1434,13 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;'
 /* 메뉴 정의: 실제 시스템에서는 DB(menus 테이블: id, parent_id, title, type, 권한)에서 받아온다 */
 const MENUS = [
   { id: 'notice', name: '공지사항', icon: 'notice', items: [
-    { id: 'all', name: '전체공지', type: 'board', cnt: 242 }, { id: 'event', name: '경조게시판', type: 'board' },
+    { id: 'all', name: '전체공지', type: 'board' }, { id: 'event', name: '경조게시판', type: 'board' },
     { id: 'acct', name: '경리게시판', type: 'board' }, { id: 'admin', name: '총무게시판', type: 'board' },
     { id: 'plan', name: '기획게시판', type: 'board' }, { id: 'it', name: '전산게시판', type: 'board' },
     { id: 'order', name: '수주공지', type: 'board' }, { id: 'safety', name: '안전보건정보', type: 'board' } ] },
   { id: 'mail', name: '전자우편', icon: 'mail', items: [
     { id: 'inbox', name: '받은편지함', type: 'mailbox', get cnt() { return mailUnread(); } }, { id: 'sent', name: '보낸편지함', type: 'mailbox' },
-    { id: 'memo', name: '사내통신', type: 'board', cnt: 32 } ] },
+    { id: 'memo', name: '사내통신', type: 'board' } ] },
   { id: 'doc', name: '문서관리', icon: 'doc', items: [
     { id: 'write', name: '문서작성', type: 'docwrite' }, { id: 'manage', name: '문서관리', type: 'docmanage' },
     { id: 'inout', name: '문서수발함', type: 'docinout', get cnt() { return inboxPending(); } }, { id: 'history', name: '개인문서이력관리', type: 'dochist' },
