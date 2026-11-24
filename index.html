@@ -540,6 +540,20 @@ h2 .ncat { font-size: 13px; line-height: 22px; vertical-align: 3px; }
 .wx-days svg.i { width: 22px; height: 22px; }
 .wx-days .hi { color: var(--bad); } .wx-days .lo { color: var(--sat, var(--accent)); }
 .wx-days .pp { color: var(--ink-2); font-size: 11px; }
+.wx-foot { display: flex; align-items: center; }
+.wx-foot .spacer { flex: 1; }
+.wx-foot .linkish { flex: none; color: var(--accent); font-size: 11.5px; font-weight: 600; cursor: pointer; }
+.wx-click { cursor: pointer; }
+.wx-click:hover { background: var(--accent-soft); }
+.wx15 td, .wx15 th { white-space: nowrap; }
+.wx15 td.sun { color: var(--bad); } .wx15 td.sat { color: var(--sat, var(--accent)); }
+.wx15 td small { font-size: 11px; }
+.wx15 .hi { color: var(--bad); } .wx15 .lo { color: var(--sat, var(--accent)); }
+.wx15 tr.wx-today td { background: var(--accent-soft); font-weight: 600; }
+.wx15-sky { display: inline-flex; align-items: center; gap: 6px; }
+.wx15-sky svg.i { width: 20px; height: 20px; color: var(--accent); }
+.wx15-w { display: inline-block; padding: 1px 7px; border-radius: 9px; background: #d64545; color: #fff; font-size: 11.5px; font-weight: 700; }
+.wx15-w.soft { background: var(--accent-soft); color: var(--accent); }
 .wx-foot { padding: 6px 12px 8px; font-size: 11px; color: var(--ink-2); text-align: right; border-top: 1px solid var(--line); }
 .wx-msg { padding: 22px 16px; text-align: center; font-size: 13px; color: var(--ink-2); }
 .wx-msg button { margin-top: 8px; font: inherit; font-size: 12px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); }
@@ -7894,6 +7908,33 @@ const WX_ICON = {
 const wxSvg = k => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${WX_ICON[k]}</svg>`;
 const wxGrade = (v, cuts) => v == null ? ['-', ''] : v <= cuts[0] ? ['좋음', 'g1'] : v <= cuts[1] ? ['보통', 'g2'] : v <= cuts[2] ? ['나쁨', 'g3'] : ['매우나쁨', 'g4'];
 const wxCache = {};
+/* 15일 예보: 고른 지역의 오늘부터 15일 일별 날씨 (Open-Meteo, 최대 16일) */
+const wx15Cache = {};
+async function wxForecast(name, lat, lon) {
+  const m = modal(`${name} · 15일 날씨예보`, '<div class="wx-msg">예보를 불러오는 중…</div>', '<span class="crumb" style="margin-right:auto">10일 이후 예보는 정확도가 낮아 참고용입니다.</span><button class="btn" type="button" data-close>닫기</button>', true);
+  const k = `${lat},${lon}`;
+  try {
+    let d = wx15Cache[k] && Date.now() - wx15Cache[k].at < 30 * 60e3 ? wx15Cache[k].d : null;
+    if (!d) {
+      const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&timezone=Asia%2FSeoul&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,wind_speed_10m_max&forecast_days=15&wind_speed_unit=ms`);
+      if (!r.ok) throw new Error('http'); d = (await r.json()).daily; wx15Cache[k] = { d, at: Date.now() };
+    }
+    if (!m.el.isConnected) return;
+    const n = v => v == null ? '-' : Math.round(v);
+    const rows = d.time.map((t, i) => {
+      const dt = new Date(t + 'T00:00'), dow = dt.getDay(), hol = holiName(t), [desc, ic] = WX_CODE(d.weather_code[i]);
+      const hi = d.temperature_2m_max[i], lo = d.temperature_2m_min[i], pp = d.precipitation_probability_max[i], rain = d.precipitation_sum[i], wind = d.wind_speed_10m_max[i];
+      const warn = [wind >= 10 && '강풍', hi >= 33 && '폭염', lo <= -10 && '한파', pp >= 70 && '우천', lo <= 0 && lo > -10 && '영하'].filter(Boolean);
+      return `<tr class="${i === 0 ? 'wx-today' : ''}"><td class="${dow === 0 || hol ? 'sun' : dow === 6 ? 'sat' : ''}">${i === 0 ? '오늘' : i === 1 ? '내일' : ''} ${t.slice(5).replace('-', '.')} (${'일월화수목금토'[dow]})${hol ? ` <small>${esc(hol)}</small>` : ''}</td>
+        <td><span class="wx15-sky">${wxSvg(ic)}${desc}</span></td><td class="num"><b class="hi">${n(hi)}°</b> / <b class="lo">${n(lo)}°</b></td>
+        <td class="num">${pp ?? '-'}%</td><td class="num">${rain ? rain.toFixed(1) + 'mm' : '-'}</td><td class="num">${wind == null ? '-' : wind.toFixed(1)}m/s</td>
+        <td>${warn.map(w => `<span class="wx15-w ${w === '영하' ? 'soft' : ''}">${w}</span>`).join(' ')}</td></tr>`;
+    }).join('');
+    m.el.querySelector('.dialog-body').innerHTML = `<div class="table-wrap"><table class="grid wx15"><thead><tr><th>날짜</th><th>날씨</th><th>최고 / 최저</th><th>강수확률</th><th>강수량</th><th>최대풍속</th><th>작업 주의</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  } catch (e) {
+    if (m.el.isConnected) m.el.querySelector('.dialog-body').innerHTML = '<div class="wx-msg">날씨 서버에 연결할 수 없습니다. 잠시 후 다시 시도하세요.</div>';
+  }
+}
 function weatherWidget(el) {
   // sel: 'ip' = 내 위치(IP), 'site:<사업번호>' = 진행 현장(현장 개요 주소의 시·군), 그 밖 = WX_LOCS 지역 이름. 고른 적이 없으면 IP 위치부터
   let sel = 'ip', ipLoc = null;
@@ -7933,8 +7974,10 @@ function weatherWidget(el) {
       <div class="wx-days">${dl.time.slice(0, 4).map((t, i) => `<div><span>${dname(t, i)}</span>${wxSvg(WX_CODE(dl.weather_code[i])[1])}
         <span><b class="hi">${Math.round(dl.temperature_2m_max[i])}°</b>/<b class="lo">${Math.round(dl.temperature_2m_min[i])}°</b></span>
         <span class="pp" title="강수확률">☂ ${dl.precipitation_probability_max[i] ?? '-'}%</span></div>`).join('')}</div>
-      <div class="wx-foot">${c.time.slice(11, 16)} 기준 · Open-Meteo</div>`;
+      <div class="wx-foot"><button type="button" class="linkish" data-wx15>15일 예보 보기</button><span class="spacer"></span>${c.time.slice(11, 16)} 기준 · Open-Meteo</div>`;
     bind();
+    el.querySelector('.wx-now').classList.add('wx-click'); el.querySelector('.wx-days').classList.add('wx-click');
+    el.querySelectorAll('[data-wx15], .wx-click').forEach(b => b.onclick = () => { const [nm, la, lo] = cur(); wxForecast(nm, la, lo); });
   };
   const load = async () => {
     const [, lat, lon] = cur(), k = key(), hit = wxCache[k];
