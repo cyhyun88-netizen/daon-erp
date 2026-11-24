@@ -7879,7 +7879,7 @@ function setPerson(p, v) {
   }
   const siteNo = siteNoOf(v.dept);
   Object.assign(p, { rank: v.rank, dept: v.dept, siteNo: undefined, siteName: undefined, siteRole: undefined, siteTel: '' });
-  ['mobile', 'email', 'ext'].forEach(k => { if (v[k]) p[k] = v[k]; });
+  ['mobile', 'email', 'ext'].forEach(k => { if (v[k] !== undefined) p[k] = v[k] || ''; });   // 비워서 저장하면 빈칸으로 (예전엔 빈 값이면 처음 값이 남았다)
   ['join', 'out'].forEach(k => { if (v[k] !== undefined) p[k] = v[k] || ''; });   // 입사일 · 퇴사일
   if (siteNo) {
     const role = v.duty && SITE_ROLES.includes(v.duty) ? v.duty : v.duty || '기타';
@@ -8198,7 +8198,7 @@ function staffEditor(done, p) {
       ${frow('입사일', `<input class="field" type="date" name="join" value="${esc(p?.join || '')}" min="${COMPANY_OPEN}" aria-label="입사일"><span class="crumb">연차 · 증명서 · 근속기간의 기준</span>`)}
       ${frow('퇴사일', `<input class="field" type="date" name="out" value="${esc(p?.out || '')}" aria-label="퇴사일"><span class="crumb">넣으면 퇴사일 다음 날부터 퇴사자 관리로 옮겨집니다 (비우면 재직)</span>`)}
       ${frow('휴대폰', `<input class="field" name="mobile" inputmode="tel" value="${esc(p?.mobile || '')}" placeholder="010-0000-0000">`)}
-      ${frow('내선', `<input class="field" name="ext" inputmode="tel" value="${esc(p?.ext || '')}" placeholder="선택">`)}
+      ${frow('내선', `<input class="field" name="ext" inputmode="tel" value="${esc(p ? p.ext || '' : DEPT_TEL[cur.dept] || '')}" placeholder="선택">`)}
       ${frow('이메일', `<input class="field" name="email" inputmode="email" value="${esc(p?.email || '')}" placeholder="선택">`)}
     </div><p class="se-note">${p ? '이름을 바꾸면 예전 이름으로 올린 결재 문서 · 결재선 · 고정 결재선도 새 이름의 사람으로 이어집니다(문서 본문에 적힌 글자는 그대로). 직위·부서를 바꾸면 기본 결재선(부서장·본부장)도 새 직위·부서 기준으로 정해집니다. 현장 부서로 옮기면 직책이 현장 직책(현장소장·공무·안전관리자 등)이 됩니다. 이미 올린 결재 문서의 결재선은 바뀌지 않습니다.'
       : '초기 비밀번호는 사번입니다. 처음 로그인할 때 새 비밀번호를 정합니다. 이름은 결재·권한의 기준이라 다른 직원과 같으면 안 됩니다.'}</p>`,
