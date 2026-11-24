@@ -524,7 +524,7 @@ h2 .ncat { font-size: 13px; line-height: 22px; vertical-align: 3px; }
 .badge.zero { background: var(--line); color: var(--ink-2); }
 
 /* 날씨 위젯 */
-.wx-loc { font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); }
+.wx-loc { max-width: 190px; text-overflow: ellipsis; font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); }
 .wx-now { display: flex; align-items: center; gap: 12px; padding: 14px 16px 10px; }
 .wx-now svg.i { width: 46px; height: 46px; stroke-width: 1.4; color: var(--accent); }
 .wx-temp { font-size: 30px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
@@ -6404,7 +6404,7 @@ const colSum = (form, k, i) => [...form.querySelectorAll(`[data-rows="${k}"] [da
 const WX_SKY = ['맑음', '구름조금', '구름많음', '흐림', '비', '이슬비', '소나기', '뇌우', '눈', '비/눈', '안개', '황사'];
 const wxText = x => !x ? '' : [x.sky, x.tmin != null || x.tmax != null ? `${x.tmin ?? '-'}~${x.tmax ?? '-'}℃` : '', x.rain ? `강수 ${x.rain}mm` : ''].filter(Boolean).join(' · ');
 /* 현장 위치: 현장주소에 들어 있는 시·군 이름으로 찾고, 없으면 본사 */
-const siteCoord = no => { const a = (siteStore.get(no).ov.addr || '').replace(/\s/g, ''), p = WX_PLACES.find(([n]) => a.includes(n)); return p ? [p[1], p[2], p[0]] : [WX_LOCS[0][1], WX_LOCS[0][2], '본사(의정부)']; };
+const siteCoord = no => { const a = (siteStore.get(no).ov.addr || '').replace(/\s/g, ''), p = /경기도?광주/.test(a) ? ['경기 광주', 37.429, 127.255] : WX_PLACES.find(([n]) => a.includes(n)); return p ? [p[1], p[2], p[0]] : [WX_LOCS[0][1], WX_LOCS[0][2], '본사(의정부)']; };
 const DAY_FORMS = {
   work: {
     blank: () => Object.fromEntries(WORK_ITEMS.map(([k]) => [k, 0])),
@@ -7895,17 +7895,25 @@ const wxSvg = k => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${WX_I
 const wxGrade = (v, cuts) => v == null ? ['-', ''] : v <= cuts[0] ? ['좋음', 'g1'] : v <= cuts[1] ? ['보통', 'g2'] : v <= cuts[2] ? ['나쁨', 'g3'] : ['매우나쁨', 'g4'];
 const wxCache = {};
 function weatherWidget(el) {
-  // li: -1 = 내 위치(IP), 0~ = WX_LOCS. 직원이 고른 적이 없으면 IP 위치부터
-  let li = -1, ipLoc = null, saved = null;
-  try { saved = localStorage.getItem('wx-loc'); } catch (e) {}
-  if (saved && saved !== 'ip') li = Math.max(0, WX_LOCS.findIndex(l => l[0] === saved));
-  const locs = () => ipLoc ? [[`내 위치 · ${ipLoc.name || '근처'}`, ipLoc.lat, ipLoc.lon]] : [];
-  const cur = () => li < 0 ? (ipLoc ? [`내 위치 · ${ipLoc.name}`, ipLoc.lat, ipLoc.lon] : WX_LOCS[0]) : WX_LOCS[li];
-  const head = () => `<div class="w-head"><span class="eyebrow">Weather</span>
-    <select class="wx-loc" aria-label="날씨 지역">${locs().map(l => `<option value="-1" ${li < 0 ? 'selected' : ''}>${esc(l[0])}</option>`).join('')}${WX_LOCS.map((l, i) => `<option value="${i}" ${i === li || (li < 0 && !ipLoc && i === 0) ? 'selected' : ''}>${l[0]}</option>`).join('')}</select></div>`;
+  // sel: 'ip' = 내 위치(IP), 'site:<사업번호>' = 진행 현장(현장 개요 주소의 시·군), 그 밖 = WX_LOCS 지역 이름. 고른 적이 없으면 IP 위치부터
+  let sel = 'ip', ipLoc = null;
+  try { sel = localStorage.getItem('wx-loc') || 'ip'; } catch (e) {}
+  /* 진행 현장 (공사관리 목록 = PROJECTS: 준공 · 숨김 현장은 빠짐). 주소에서 시·군을 못 찾은 현장은 목록에 넣지 않는다 (본사 날씨로 잘못 보이지 않게) */
+  const sites = () => PROJECTS.map(([nm, no]) => { try { const [lat, lon, place] = siteCoord(no); if (place === '본사(의정부)' && !/의정부/.test(siteStore.get(no).ov.addr || '')) return null;
+    const short = SITE_DEPTS.find(([, n]) => n === no)?.[0] || nm; return { v: `site:${no}`, label: `${short} · ${place}`, full: `${nm} (${place})`, lat, lon }; } catch (e) { return null; } }).filter(Boolean);
+  const cur = () => {
+    if (sel === 'ip') return ipLoc ? [`내 위치 · ${ipLoc.name}`, ipLoc.lat, ipLoc.lon] : WX_LOCS[0];
+    if (sel.startsWith('site:')) { const s = sites().find(x => x.v === sel); return s ? [s.label, s.lat, s.lon] : WX_LOCS[0]; }
+    return WX_LOCS.find(l => l[0] === sel) || WX_LOCS[0];
+  };
+  const head = () => { const ss = sites(), c = cur()[0], opt = (v, t, ti) => `<option value="${esc(v)}" ${t === c ? 'selected' : ''}${ti ? ` title="${esc(ti)}"` : ''}>${esc(t)}</option>`;
+    return `<div class="w-head"><span class="eyebrow">Weather</span>
+    <select class="wx-loc" aria-label="날씨 지역">${ipLoc ? opt('ip', `내 위치 · ${ipLoc.name || '근처'}`) : ''}${opt(WX_LOCS[0][0], WX_LOCS[0][0])}
+      ${ss.length ? `<optgroup label="현장">${ss.map(s => opt(s.v, s.label, s.full)).join('')}</optgroup>` : ''}
+      <optgroup label="지역">${WX_LOCS.slice(1).map(l => opt(l[0], l[0])).join('')}</optgroup></select></div>`; };
   const key = () => cur().slice(1).join(',');
   const bind = () => {
-    el.querySelector('.wx-loc').onchange = e => { li = +e.target.value; try { localStorage.setItem('wx-loc', li < 0 ? 'ip' : WX_LOCS[li][0]); } catch (er) {} load(); };
+    el.querySelector('.wx-loc').onchange = e => { sel = e.target.value; try { localStorage.setItem('wx-loc', sel); } catch (er) {} load(); };
     const rb = el.querySelector('[data-wx-retry]'); if (rb) rb.onclick = () => { delete wxCache[key()]; load(); };
   };
   const draw = d => {
@@ -7945,8 +7953,8 @@ function weatherWidget(el) {
     }
   };
   // 내 위치(IP)를 먼저 찾고(최대 5초), 못 찾으면 본사로
-  if (li < 0) { el.innerHTML = head() + '<div class="wx-msg">이 컴퓨터 위치를 찾는 중…</div>'; bind(); wxIpLoc().then(v => { ipLoc = v; if (!v) li = 0; if (el.isConnected) load(); }); }
-  else { load(); wxIpLoc().then(v => { ipLoc = v; if (v && el.isConnected && el.querySelector('.wx-loc')) { const s = el.querySelector('.wx-loc'); s.insertAdjacentHTML('afterbegin', `<option value="-1">${esc(`내 위치 · ${v.name || '근처'}`)}</option>`); } }); }
+  if (sel === 'ip') { el.innerHTML = head() + '<div class="wx-msg">이 컴퓨터 위치를 찾는 중…</div>'; bind(); wxIpLoc().then(v => { ipLoc = v; if (!v) sel = WX_LOCS[0][0]; if (el.isConnected) load(); }); }
+  else { load(); wxIpLoc().then(v => { ipLoc = v; if (v && el.isConnected && el.querySelector('.wx-loc')) { const s = el.querySelector('.wx-loc'); s.insertAdjacentHTML('afterbegin', `<option value="ip">${esc(`내 위치 · ${v.name || '근처'}`)}</option>`); } }); }
 }
 function miniCal(el, y, mo) {
   const first = new Date(y, mo, 1).getDay(), last = new Date(y, mo + 1, 0).getDate(), prevLast = new Date(y, mo, 0).getDate();
