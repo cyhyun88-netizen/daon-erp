@@ -7940,25 +7940,28 @@ const PROJ_KEY = 'daon-proj-v1';
 const PROJ_BASE = PROJECTS.map(([name, no]) => ({ no, name, tel: SITE_STAFF[no]?.tel || '', dept: (SITE_DEPTS.find(([, n]) => n === no) || [])[0] || '' }));
 /* 준공현장: done = { 사업번호: { date: 준공일, memo, by, at } }. 준공 처리한 현장은 숨긴 현장처럼 공사관리 · HOME · 사업 선택에서 빠지고
    관리자 › 공사관리 › 준공현장에서 개요 · 날짜별 기록을 그대로 볼 수 있다. [진행으로 되돌리기]로 언제든 되돌린다 */
-let projCfg = { list: [], edits: {}, hidden: [], done: {} };
-const allProjects = () => [...PROJ_BASE.map(p => ({ ...p, base: true })), ...projCfg.list.filter(x => !PROJ_BASE.some(b => b.no === x.no))]
-  .map(p => ({ ...p, name: projCfg.edits[p.no]?.name || p.name, tel: projCfg.edits[p.no]?.tel ?? p.tel, hidden: projCfg.hidden.includes(p.no), done: projCfg.done[p.no] || null }));
+/* 삭제: deleted = [사업번호]. 모든 목록에서 없어지고 되돌릴 수 없다 (이름만 지난 문서 · 기록 표시용으로 남긴다). 배치된 직원이 있으면 삭제하지 않는다 */
+let projCfg = { list: [], edits: {}, hidden: [], done: {}, deleted: [] };
+const rawProjects = () => [...PROJ_BASE.map(p => ({ ...p, base: true })), ...projCfg.list.filter(x => !PROJ_BASE.some(b => b.no === x.no))]
+  .map(p => ({ ...p, name: projCfg.edits[p.no]?.name || p.name, tel: projCfg.edits[p.no]?.tel ?? p.tel, hidden: projCfg.hidden.includes(p.no), done: projCfg.done[p.no] || null, deleted: projCfg.deleted.includes(p.no) }));
+const allProjects = () => rawProjects().filter(p => !p.deleted);
 function applyProjects(c) {
   projCfg = { list: Array.isArray(c?.list) ? c.list.filter(x => x && x.no && x.name) : [], edits: c?.edits && typeof c.edits === 'object' ? c.edits : {}, hidden: Array.isArray(c?.hidden) ? c.hidden : [],
-    done: c?.done && typeof c.done === 'object' && !Array.isArray(c.done) ? c.done : {} };
+    done: c?.done && typeof c.done === 'object' && !Array.isArray(c.done) ? c.done : {}, deleted: Array.isArray(c?.deleted) ? c.deleted : [] };
+  for (const p of rawProjects()) PJ_NAMES[p.no] = p.name;
   const all = allProjects();
-  for (const p of all) PJ_NAMES[p.no] = p.name;
   PROJECTS.splice(0, PROJECTS.length, ...all.filter(p => !p.hidden && !p.done).map(p => [p.name, p.no]));
   for (const p of all) {
     if (!SITE_STAFF[p.no]) SITE_STAFF[p.no] = { tel: p.tel || '', staff: [] }; else SITE_STAFF[p.no].tel = p.tel || '';
     if (!SITE_DEFAULTS[p.no]) SITE_DEFAULTS[p.no] = { ov: { client: '', start: '', end: '', amount: 0, summary: '', addr: '', plan: 0, actual: 0 } };
     if (p.dept && !SITE_DEPTS.some(([d]) => d === p.dept)) SITE_DEPTS.push([p.dept, p.no]);
   }
+  for (let i = SITE_DEPTS.length - 1; i >= 0; i--) if (projCfg.deleted.includes(SITE_DEPTS[i][1])) SITE_DEPTS.splice(i, 1);   // 삭제한 현장의 부서는 부서 목록에서 뺀다
   applyStaffConfig(lastStaffCfg);   // 현장 부서가 늘었을 수 있어 직원 배치를 다시
   siteChanged();
 }
 async function saveProjects(c) {
-  const cfg = { list: c.list, edits: c.edits, hidden: c.hidden, done: c.done || {}, at: new Date().toISOString() };
+  const cfg = { list: c.list, edits: c.edits, hidden: c.hidden, done: c.done || {}, deleted: c.deleted || [], at: new Date().toISOString() };
   if (siteStore.remote) await siteStore.remote.doc('config/projects').set(cfg);
   else localStorage.setItem(PROJ_KEY, JSON.stringify(cfg));
   applyProjects(cfg);
@@ -7984,6 +7987,7 @@ function projectEditor(done, p) {
       const no = v('no'), dept = v('dept');
       if (!/^[\w-]{3,20}$/.test(no)) { toast('사업번호는 영문 · 숫자 · - 로 3~20자 입력하세요. (예: P-2026-030)'); return; }
       if (allProjects().some(x => x.no === no)) { toast('이미 있는 사업번호입니다.'); return; }
+      if (rawProjects().some(x => x.no === no)) { toast('삭제한 현장의 사업번호라 다시 쓸 수 없습니다. 다른 번호를 입력하세요.'); return; }
       if (!dept) { toast('현장 부서 이름을 입력하세요.'); return; }
       if (DEPTS.includes(dept) || SITE_DEPTS.some(([d]) => d === dept)) { toast('이미 있는 부서 이름입니다.'); return; }
       next = { ...projCfg, list: [...projCfg.list, { no, name, tel, dept }] };
@@ -7997,28 +8001,75 @@ function adminSites(host) {
   host.innerHTML = `<div class="inline-row"><span class="crumb" style="flex:1">전체 관리자는 모든 현장의 개요와 날짜별 기록을 입력 · 수정할 수 있습니다.</span><button class="btn primary" type="button" data-add>현장 추가</button></div>
     <div class="table-wrap" style="margin-top:10px"><table class="grid"><thead><tr><th>사업번호</th><th>현장명</th><th>현장 부서</th><th>전화</th><th class="c">배치 · 담당</th><th class="c">관리</th></tr></thead><tbody></tbody></table></div>
     <p class="se-note">[개요]: 발주처 · 공기 · 계약금액 · 공정률 · 현장주소. [기록]: 현장근무 · 인력투입 · 장비투입 · 장비 점검의 날짜별 기록을 보고 아무 날짜나 고칩니다. 현장 담당자 지정은 왼쪽 '현장 담당자'에서 합니다.
-      [준공]: 준공이 끝난 현장을 '준공현장'으로 옮깁니다 (공사관리 · HOME · 사업 선택 목록에서 빠지고, 기록은 그대로 남습니다). <span data-donecnt></span></p>`;
+      [준공]: 준공이 끝난 현장을 '준공현장'으로 옮깁니다. [숨기기]: '숨긴현장'으로 옮깁니다. 둘 다 공사관리 · HOME · 사업 선택 목록에서 빠지고 기록은 그대로 남습니다.
+      [삭제]: 현장을 완전히 지웁니다 (되돌릴 수 없음). <span data-donecnt></span></p>`;
   const tb = host.querySelector('tbody');
   const draw = () => {
-    const live = allProjects().filter(p => !p.done), nDone = allProjects().length - live.length;
-    host.querySelector('[data-donecnt]').innerHTML = nDone ? `준공 처리한 현장 ${nDone}곳은 <button class="linkish" type="button" data-admgo="done">준공현장</button>에 있습니다.` : '';
-    tb.innerHTML = live.map(p => `<tr${p.hidden ? ' style="opacity:.55"' : ''}><td class="num">${esc(p.no)}</td><td class="title">${esc(p.name)}${p.hidden ? ' <span class="mine-tag">숨김</span>' : ''}${p.base ? '' : ' <span class="mine-tag">추가</span>'}${endPassed(p.no) ? ' <span class="mine-tag" title="준공(예정)일이 지났습니다. 준공이 끝났으면 [준공]을 누르세요">준공예정일 지남</span>' : ''}</td>
+    const all = allProjects(), live = all.filter(p => !p.done && !p.hidden), nDone = all.filter(p => p.done).length, nHid = all.filter(p => p.hidden && !p.done).length;
+    host.querySelector('[data-donecnt]').innerHTML = [nDone ? `<button class="linkish" type="button" data-admgo="done">준공현장 ${nDone}곳</button>` : '', nHid ? `<button class="linkish" type="button" data-admgo="hidden">숨긴현장 ${nHid}곳</button>` : ''].filter(Boolean).join(' · ');
+    tb.innerHTML = live.map(p => `<tr><td class="num">${esc(p.no)}</td><td class="title">${esc(p.name)}${p.base ? '' : ' <span class="mine-tag">추가</span>'}${endPassed(p.no) ? ' <span class="mine-tag" title="준공(예정)일이 지났습니다. 준공이 끝났으면 [준공]을 누르세요">준공예정일 지남</span>' : ''}</td>
       <td>${esc(p.dept || '-')}</td><td class="num">${esc(p.tel || '-')}</td><td class="c">${(SITE_STAFF[p.no]?.staff || []).length}명 · ${siteStore.mgrKeys(p.no).length}명</td>
-      <td class="c" style="white-space:nowrap"><button class="btn sm" type="button" data-edit="${esc(p.no)}">수정</button> <button class="btn sm" type="button" data-ov="${esc(p.no)}" ${p.hidden ? 'disabled' : ''}>개요</button>
-        <select class="field sm" data-hist="${esc(p.no)}" aria-label="${esc(p.name)} 기록 보기" ${p.hidden ? 'disabled' : ''}><option value="">기록…</option>${Object.entries(DAILY).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
-        <button class="btn sm" type="button" data-hide="${esc(p.no)}">${p.hidden ? '다시 보이기' : '숨기기'}</button> <button class="btn sm" type="button" data-done="${esc(p.no)}">준공</button></td></tr>`).join('') || '<tr><td colspan="6" class="c crumb">진행 중인 현장이 없습니다.</td></tr>';
+      <td class="c" style="white-space:nowrap"><button class="btn sm" type="button" data-edit="${esc(p.no)}">수정</button> <button class="btn sm" type="button" data-ov="${esc(p.no)}">개요</button>
+        <select class="field sm" data-hist="${esc(p.no)}" aria-label="${esc(p.name)} 기록 보기"><option value="">기록…</option>${Object.entries(DAILY).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
+        <button class="btn sm" type="button" data-hide="${esc(p.no)}">숨기기</button> <button class="btn sm" type="button" data-done="${esc(p.no)}">준공</button> <button class="btn sm" type="button" data-del="${esc(p.no)}">삭제</button></td></tr>`).join('') || '<tr><td colspan="6" class="c crumb">진행 중인 현장이 없습니다.</td></tr>';
   };
   host.querySelector('[data-add]').onclick = () => projectEditor(draw);
   tb.addEventListener('click', async e => {
-    const b = e.target.closest('button'); if (!b) return; const d = b.dataset, p = allProjects().find(x => x.no === (d.edit || d.ov || d.hide || d.done));
+    const b = e.target.closest('button'); if (!b) return; const d = b.dataset, p = allProjects().find(x => x.no === (d.edit || d.ov || d.hide || d.done || d.del));
     if (!p) return;
     if (d.done) completeSite(p, draw);
     if (d.edit) projectEditor(draw, p);
     if (d.ov) siteEditors(p.no).ov();
-    if (d.hide) {
-      const go = async () => { try { await saveProjects({ ...projCfg, hidden: p.hidden ? projCfg.hidden.filter(x => x !== p.no) : [...projCfg.hidden, p.no] }); } catch (er) { toast('저장하지 못했습니다.'); return; } draw(); toast(p.hidden ? '다시 보이게 했습니다.' : '숨겼습니다. 기록은 그대로 남습니다.'); };
-      if (p.hidden) go(); else confirmBox('현장 숨기기', `<b>${esc(p.name)}</b>을(를) 공사관리 · HOME · 사업 선택 목록에서 숨길까요?<br>입력해 둔 기록과 직원 배치는 그대로 남고, 언제든 다시 보이게 할 수 있습니다.`, '숨기기', go);
-    }
+    if (d.del) deleteSite(p, draw);
+    if (d.hide) confirmBox('현장 숨기기', `<b>${esc(p.name)}</b>을(를) 숨긴현장으로 옮길까요?<br>공사관리 · HOME · 사업 선택 목록에서 빠집니다. 입력해 둔 기록과 직원 배치는 그대로 남고, 숨긴현장에서 언제든 다시 보이게 할 수 있습니다.`, '숨기기', async () => {
+      try { await saveProjects({ ...projCfg, hidden: [...projCfg.hidden, p.no] }); } catch (er) { toast('저장하지 못했습니다.'); return; }
+      draw(); toast('숨긴현장으로 옮겼습니다. 기록은 그대로 남습니다.');
+    });
+  });
+  tb.addEventListener('change', e => { const s = e.target.closest('[data-hist]'); if (s && s.value) { siteHistory(s.dataset.hist, s.value); s.value = ''; } });
+  onSiteChange(host, draw);
+  draw();
+}
+/* 현장 삭제: 배치된 직원이 없을 때만. 사업번호를 한 번 더 입력해야 지운다 (되돌릴 수 없음) */
+function deleteSite(p, done) {
+  const n = (SITE_STAFF[p.no]?.staff || []).length;
+  if (n) { toast(`이 현장에 배치된 직원 ${n}명이 있어 삭제할 수 없습니다. 먼저 직원 관리에서 다른 부서 · 현장으로 옮기세요.`); return; }
+  const m = modal(`현장 삭제 · ${p.no}`, `<p><b>${esc(p.name)}</b>을(를) 삭제합니다.</p>
+    <p class="se-note">삭제하면 공사관리 · 준공현장 · 숨긴현장 · HOME · 사업 선택 어디에도 나오지 않고 <b>되돌릴 수 없습니다.</b> 지난 결재 문서 · 게시글에 적힌 현장명은 그대로 보입니다.
+      나중에 다시 볼 수도 있으면 삭제 대신 [숨기기]를 쓰세요.</p>
+    <div class="form">${frow('확인', `<input class="field" name="cf" placeholder="사업번호 ${esc(p.no)} 입력" autocomplete="off">`)}</div>`,
+    '<button class="btn" type="button" data-close>취소</button><button class="btn primary" type="button" data-ok>삭제</button>');
+  m.el.querySelector('[data-ok]').onclick = async () => {
+    if (m.el.querySelector('[name="cf"]').value.trim() !== p.no) { toast(`삭제하려면 사업번호 ${p.no}를 그대로 입력하세요.`); return; }
+    const doneMap = { ...projCfg.done }; delete doneMap[p.no];
+    try { await saveProjects({ ...projCfg, hidden: projCfg.hidden.filter(x => x !== p.no), done: doneMap, deleted: [...projCfg.deleted, p.no] }); }
+    catch (e) { toast('삭제하지 못했습니다. 잠시 후 다시 시도하세요.'); return; }
+    m.close(); toast(`${p.name}을(를) 삭제했습니다.`); done?.();
+  };
+}
+/* 관리자 › 공사관리 › 숨긴현장: 숨긴 현장 목록 · 다시 보이기 · 삭제 */
+function adminHiddenSites(host) {
+  host.innerHTML = `<div class="toolbar"><input class="field" type="search" data-hq placeholder="현장명 · 사업번호 검색" aria-label="검색어"><span class="spacer"></span><span class="crumb" data-hsum></span></div>
+    <div class="table-wrap" style="margin-top:10px"><table class="grid"><thead><tr><th>사업번호</th><th>현장명</th><th>현장 부서</th><th>발주처</th><th class="c">공사기간</th><th class="c">배치</th><th class="c">관리</th></tr></thead><tbody></tbody></table></div>
+    <p class="se-note">숨긴 현장은 공사관리 · HOME · 결재 사업 선택 목록에 나오지 않습니다. [다시 보이기]를 누르면 공사관리 목록으로 돌아갑니다. 현장을 숨기려면 '공사관리'에서 [숨기기]를 누릅니다.</p>`;
+  const tb = host.querySelector('tbody'), q = host.querySelector('[data-hq]'), dot = d => (d || '').replace(/-/g, '.');
+  const draw = () => {
+    const k = q.value.trim().toLowerCase(), hid = allProjects().filter(p => p.hidden && !p.done);
+    host.querySelector('[data-hsum]').textContent = `숨긴현장 ${hid.length}곳`;
+    tb.innerHTML = hid.filter(p => !k || `${p.no} ${p.name}`.toLowerCase().includes(k)).map(p => { const o = siteStore.get(p.no)?.ov || {};
+      return `<tr><td class="num">${esc(p.no)}</td><td class="title">${esc(p.name)}</td><td>${esc(p.dept || '-')}</td><td>${esc(o.client || '-')}</td>
+        <td class="c num">${o.start ? `${dot(o.start)} ~ ${dot(o.end)}` : '-'}</td><td class="c">${(SITE_STAFF[p.no]?.staff || []).length}명</td>
+        <td class="c" style="white-space:nowrap"><button class="btn sm" type="button" data-ov="${esc(p.no)}">개요</button>
+          <select class="field sm" data-hist="${esc(p.no)}" aria-label="${esc(p.name)} 기록 보기"><option value="">기록…</option>${Object.entries(DAILY).map(([kk, l]) => `<option value="${kk}">${l}</option>`).join('')}</select>
+          <button class="btn sm" type="button" data-show="${esc(p.no)}">다시 보이기</button> <button class="btn sm" type="button" data-del="${esc(p.no)}">삭제</button></td></tr>`; }).join('')
+      || `<tr><td colspan="7" class="c crumb">${k ? '찾는 현장이 없습니다.' : '숨긴 현장이 없습니다.'}</td></tr>`;
+  };
+  q.addEventListener('input', draw);
+  tb.addEventListener('click', async e => {
+    const b = e.target.closest('button'); if (!b) return; const d = b.dataset, p = allProjects().find(x => x.no === (d.ov || d.show || d.del)); if (!p) return;
+    if (d.ov) siteEditors(p.no).ov();
+    if (d.del) deleteSite(p, draw);
+    if (d.show) { try { await saveProjects({ ...projCfg, hidden: projCfg.hidden.filter(x => x !== p.no) }); } catch (er) { toast('저장하지 못했습니다.'); return; } draw(); toast('다시 보이게 했습니다. 공사관리 목록에 나옵니다.'); }
   });
   tb.addEventListener('change', e => { const s = e.target.closest('[data-hist]'); if (s && s.value) { siteHistory(s.dataset.hist, s.value); s.value = ''; } });
   onSiteChange(host, draw);
@@ -8060,13 +8111,14 @@ function adminDone(host) {
         <td class="r num">${o.amount ? Number(o.amount).toLocaleString() : '-'}</td><td class="c num"><b>${dot(p.done.date)}</b></td><td>${esc(p.done.memo || '')}<span class="crumb">${p.done.by ? ` · ${esc(p.done.by)} 처리` : ''}</span></td>
         <td class="c" style="white-space:nowrap"><button class="btn sm" type="button" data-ov="${esc(p.no)}">개요</button>
           <select class="field sm" data-hist="${esc(p.no)}" aria-label="${esc(p.name)} 기록 보기"><option value="">기록…</option>${Object.entries(DAILY).map(([kk, l]) => `<option value="${kk}">${l}</option>`).join('')}</select>
-          <button class="btn sm" type="button" data-undo="${esc(p.no)}">진행으로 되돌리기</button></td></tr>`; }).join('')
+          <button class="btn sm" type="button" data-undo="${esc(p.no)}">진행으로 되돌리기</button> <button class="btn sm" type="button" data-del="${esc(p.no)}">삭제</button></td></tr>`; }).join('')
       || `<tr><td colspan="8" class="c crumb">${k ? '찾는 현장이 없습니다.' : '준공 처리한 현장이 없습니다.'}</td></tr>`;
   };
   q.addEventListener('input', draw);
   tb.addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return; const d = b.dataset, p = allProjects().find(x => x.no === (d.ov || d.undo)); if (!p) return;
+    const b = e.target.closest('button'); if (!b) return; const d = b.dataset, p = allProjects().find(x => x.no === (d.ov || d.undo || d.del)); if (!p) return;
     if (d.ov) siteEditors(p.no).ov();
+    if (d.del) deleteSite(p, draw);
     if (d.undo) confirmBox('진행으로 되돌리기', `<b>${esc(p.name)}</b>을(를) 진행 중인 현장으로 되돌릴까요?<br>공사관리 · HOME · 결재 사업 선택 목록에 다시 나옵니다.`, '되돌리기', async () => {
       const next = { ...projCfg.done }; delete next[p.no];
       try { await saveProjects({ ...projCfg, done: next }); } catch (er) { toast('저장하지 못했습니다.'); return; }
@@ -8303,6 +8355,7 @@ const ADMIN_ITEMS = [
   ['trash', '임시저장소', '삭제한 결재 문서 복원 · 완전 삭제', h => adminTrash(h)],
   ['cons', '공사관리', '현장 추가 · 현장명 · 전화 · 숨기기, 현장별 개요와 날짜별 기록 수정', h => adminSites(h)],
   ['done', '준공현장', '준공 처리한 현장 목록 · 개요와 날짜별 기록 보기 · 진행으로 되돌리기', h => adminDone(h)],
+  ['hidden', '숨긴현장', '숨긴 현장 목록 · 개요와 날짜별 기록 보기 · 다시 보이기 · 삭제', h => adminHiddenSites(h)],
   ['sites', '현장 담당자', '공사관리 현장별 입력 담당자 지정', h => managerAdmin(h, 'sites')],
   ['acct', '계정 연결', 'claude.ai 계정과 직원 연결', h => managerAdmin(h, 'acct')],
   ['ids', '로그인 아이디', '직원별 로그인 아이디 정하기 · 바꾸기 · 지우기 (로그인은 아이디로만 합니다)', h => loginIdAdmin(h)],
@@ -8315,7 +8368,7 @@ const ADMIN_GROUPS = [
   ['', ['home']],
   ['직원 · 급여', ['dept', 'staff', 'retired', 'duty', 'holi', 'pay', 'pin', 'otproxy', 'certdept']],
   ['전자결재', ['sign', 'reqline', 'line', 'rules', 'docs', 'trash']],
-  ['공사관리', ['cons', 'done', 'sites']],
+  ['공사관리', ['cons', 'done', 'hidden', 'sites']],
   ['계정 · 보안', ['acct', 'ids', 'pw', 'admins']],
   ['화면', ['font']],
 ];
