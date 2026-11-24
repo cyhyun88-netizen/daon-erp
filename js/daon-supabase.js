@@ -31,7 +31,7 @@
   /* ---------- 자동 로그아웃: 마지막으로 마우스 · 키보드를 쓴 뒤 IDLE_MIN 분이 지나면 ----------
      마지막 사용 시각은 localStorage에 두어 여러 탭이 같이 쓰고, 컴퓨터를 껐다 켜서 크롬이 탭을 되살려도
      (sessionStorage 로그인이 복원돼도) 시작할 때 오래됐으면 로그아웃한다 */
-  const IDLE_MIN = Number(CFG.idleMinutes) || 30, IDLE_MS = IDLE_MIN * 60000, LAST_KEY = 'daon-erp-last';
+  const IDLE_MIN = Number(CFG.idleMinutes) || 60, IDLE_MS = IDLE_MIN * 60000, LAST_KEY = 'daon-erp-last';
   const lastUse = () => { try { return Number(localStorage.getItem(LAST_KEY)) || 0; } catch (e) { return 0; } };
   let stampAt = 0;
   const stamp = (force) => { const n = Date.now(); if (!force && n - stampAt < 15000) return; stampAt = n; try { localStorage.setItem(LAST_KEY, String(n)); } catch (e) {} };
