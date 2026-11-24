@@ -1414,7 +1414,7 @@ table.kv { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 
   <footer class="foot">
     <span class="proto">㈜다온종합건설 사내 포털</span>
-    <button type="button" data-open="mail.inbox">받은메일 <b id="foot-mail">0</b></button>
+    <button type="button" data-open="mail.memo">사내통신 <b id="foot-mail">0</b></button>
     <button type="button" data-open="appr.do">결재대기 <b id="foot-appr">0</b></button>
     <button type="button" data-open="sec.cal">오늘 일정 <b id="foot-sched">0</b></button>
     <button type="button" data-noti>알림 <b id="foot-noti">0</b></button>
@@ -1470,8 +1470,7 @@ const MENUS = [
     { id: 'plan', name: '기획게시판', type: 'board' }, { id: 'it', name: '전산게시판', type: 'board' },
     { id: 'order', name: '수주공지', type: 'board' }, { id: 'safety', name: '안전보건정보', type: 'board' } ] },
   { id: 'mail', name: '전자우편', icon: 'mail', items: [
-    { id: 'inbox', name: '받은편지함', type: 'mailbox', get cnt() { return mailUnread(); } }, { id: 'sent', name: '보낸편지함', type: 'mailbox' },
-    { id: 'memo', name: '사내통신', type: 'board' } ] },
+    { id: 'memo', name: '사내통신', type: 'mailbox', get cnt() { return mailUnread(); } } ] },   // 직원끼리 주고받는 사내통신 (받은 · 보낸 통신함). 회사 메일 연동은 나중에
   { id: 'doc', name: '문서관리', icon: 'doc', items: [
     { id: 'write', name: '문서작성', type: 'docwrite' }, { id: 'manage', name: '문서관리', type: 'docmanage' },
     { id: 'inout', name: '문서수발함', type: 'docinout', get cnt() { return inboxPending(); } }, { id: 'history', name: '개인문서이력관리', type: 'dochist' },
@@ -1763,7 +1762,7 @@ tabsEl.addEventListener('keydown', e => { const t = e.target.closest('[data-tab]
 document.getElementById('close-all').onclick = () => { [...tabs].reverse().forEach(t => t.id !== 'home' && closeTab(t.id)); activate('home'); };
 
 /* 예전 주소 → 지금 화면 (기안작성은 문서관리 › 문서작성과 같은 화면) */
-const KEY_ALIAS = { 'appr.wait': 'appr.do', 'appr.prog': 'appr.status', 'appr.done': 'appr.status', 'appr.rej': 'appr.status', 'appr.circ': 'appr.status', 'appr.draft': 'doc.write',
+const KEY_ALIAS = { 'mail.inbox': 'mail.memo', 'mail.sent': 'mail.memo', 'appr.wait': 'appr.do', 'appr.prog': 'appr.status', 'appr.done': 'appr.status', 'appr.rej': 'appr.status', 'appr.circ': 'appr.status', 'appr.draft': 'doc.write',
   'work.leave': 'sec.leave', 'sec.car': 'work.car', 'know.tech': 'know.data', 'know.std': 'know.rules', 'comm.club': 'comm.free' };   // 전자비서 메뉴를 원본 구성으로 바꾸며 옮긴 화면
 function openTab(key, opts) {
   key = KEY_ALIAS[key] || key;
@@ -5963,7 +5962,7 @@ function renderHome(pane) {
         <div class="w-head"><span class="eyebrow">My Information</span></div>
         <div class="me"><div class="avatar">${esc(ME.name[0])}</div><div><b>${esc(`${ME.name} ${ME.rank}`)}</b><span>${esc(ME.dept)}</span></div></div>
         <button class="stat-row" type="button" data-noti><span class="k">${icon('notice')}알림</span><span class="v" data-hnoti>${notiCount()}</span></button>
-        <button class="stat-row" type="button" data-open="mail.inbox"><span class="k">${icon('inbox')}전자메일</span><span class="v" data-hmail>${mailUnread()}</span></button>
+        <button class="stat-row" type="button" data-open="mail.memo"><span class="k">${icon('inbox')}사내통신</span><span class="v" data-hmail>${mailUnread()}</span></button>
         <button class="stat-row" type="button" data-open="doc.write"><span class="k">${icon('write')}문서작성</span><span class="v">${icon('arrow')}</span></button>
         <button class="stat-row" type="button" data-myinfo><span class="k">${icon('lock')}개인정보 변경</span><span class="v">${icon('arrow')}</span></button>
       </section>
@@ -11424,14 +11423,14 @@ const mailPicker = (id, label, names) => `<div class="form-row"><label>${label}<
   <select class="field sm" data-add aria-label="${label} 추가"><option value="">+ 직원 추가</option>${staffOpts('')}</select></div></div>`;
 function openMailEditor(pre = {}) {
   const tabId = `mail.write.${Date.now().toString(36)}`;
-  addTab(tabId, pre.title ? '메일 쓰기' : '메일 쓰기', pane => {
+  addTab(tabId, '사내통신 쓰기', pane => {
     const pick = { to: [...(pre.to || [])], cc: [...(pre.cc || [])] };
     let files = [...(pre.files || [])];
-    pane.innerHTML = `<div class="pe"><div class="screen-head"><h2>메일 쓰기</h2><span class="crumb">전자우편 › 메일 쓰기</span></div>
+    pane.innerHTML = `<div class="pe"><div class="screen-head"><h2>사내통신 쓰기</h2><span class="crumb">전자우편 › 사내통신</span></div>
       <div class="pe-bar"><span class="crumb">보내는 사람 ${esc(`${ME.name} ${ME.rank}`)} · ${esc(ME.dept)}</span><span class="spacer"></span><button class="btn" type="button" data-mcancel>취소</button><button class="btn primary" type="button" data-msend>보내기</button></div>
       <div class="form ml-form">${mailPicker('to', '받는 사람')}${mailPicker('cc', '참조')}
         <div class="form-row"><label for="${pane.id}-mt">제목</label><input class="field" id="${pane.id}-mt" value="${esc(pre.title || '')}" autocomplete="off"></div></div>
-      <textarea class="field pe-body" id="${pane.id}-mb" aria-label="메일 내용">${esc(pre.body || '')}</textarea>
+      <textarea class="field pe-body" id="${pane.id}-mb" aria-label="사내통신 내용">${esc(pre.body || '')}</textarea>
       <section class="pe-files"><div class="pe-files-h"><b>첨부파일</b><span class="crumb">최대 ${PE_MAX_FILES}개 · 파일당 ${PE_MAX_MB}MB</span></div>
         <div class="dropzone"><label class="btn sm" for="${pane.id}-mf">파일선택</label><input id="${pane.id}-mf" type="file" multiple hidden></div><ul class="file-list" data-files></ul></section></div>`;
     const draw = () => {
@@ -11446,7 +11445,7 @@ function openMailEditor(pre = {}) {
     pane.addEventListener('click', async e => {
       const rm = e.target.closest('[data-rm]'); if (rm) { const [k, i] = rm.dataset.rm.split(':'); pick[k].splice(+i, 1); draw(); }
       const fd = e.target.closest('[data-fdel]'); if (fd) { files.splice(+fd.dataset.fdel, 1); draw(); }
-      if (e.target.closest('[data-mcancel]')) { const t = pane.querySelector(`#${pane.id}-mt`).value.trim(), b = pane.querySelector(`#${pane.id}-mb`).value.trim(); const leave = () => closeTab(tabId); if (t || b) confirmBox('메일 쓰기 취소', '쓰던 메일이 사라집니다. 닫을까요?', '닫기', leave); else leave(); }
+      if (e.target.closest('[data-mcancel]')) { const t = pane.querySelector(`#${pane.id}-mt`).value.trim(), b = pane.querySelector(`#${pane.id}-mb`).value.trim(); const leave = () => closeTab(tabId); if (t || b) confirmBox('사내통신 쓰기 취소', '쓰던 내용이 사라집니다. 닫을까요?', '닫기', leave); else leave(); }
       const sb = e.target.closest('[data-msend]');
       if (sb) {
         const title = pane.querySelector(`#${pane.id}-mt`).value.trim(), body = pane.querySelector(`#${pane.id}-mb`).value;
@@ -11456,7 +11455,7 @@ function openMailEditor(pre = {}) {
         const up = await shared.upload(files);
         const rec = { from: ME.name, to: pick.to, cc: pick.cc.filter(n => !pick.to.includes(n)), title, body, files: up, sentAt: nowStamp(), replyOf: pre.replyOf || '' };
         shared.add('mail', rec).then(() => {}, () => {});
-        closeTab(tabId); openTab('mail.sent'); toast(`${pick.to.map(mailWho).join(', ')}${pick.cc.length ? ` 외 참조 ${pick.cc.length}명` : ''}에게 메일을 보냈습니다.`);
+        closeTab(tabId); openTab('mail.memo', { box: 'out' }); toast(`${pick.to.map(mailWho).join(', ')}${pick.cc.length ? ` 외 참조 ${pick.cc.length}명` : ''}에게 사내통신을 보냈습니다.`);
       }
     });
     draw(); setTimeout(() => pane.querySelector(pick.to.length ? `#${pane.id}-mt` : '[data-pick="to"] [data-add]')?.focus());
@@ -11468,7 +11467,7 @@ function openMail(m0) {
     const m = mailAll().find(x => x.sid === m0.sid) || m0, inbox = mailForMe(m) && m.from !== ME.name;
     if (inbox && !mailRead(m)) { m[`r_${myEmpNo()}`] = new Date().toISOString(); shared.save('mail', m, [`r_${myEmpNo()}`]); }
     const readers = [...(m.to || []), ...(m.cc || [])].map(n => { const e = STAFF.find(s => s.name === n)?.empNo; return [n, e && m[`r_${e}`]]; });
-    pane.innerHTML = `<article class="post"><div class="screen-head"><h2>${esc(m.title)}</h2><span class="crumb">전자우편 › ${inbox ? '받은편지함' : '보낸편지함'}</span></div>
+    pane.innerHTML = `<article class="post"><div class="screen-head"><h2>${esc(m.title)}</h2><span class="crumb">전자우편 › 사내통신 › ${inbox ? '받은 통신' : '보낸 통신'}</span></div>
       <table class="kv ml-head"><tbody><tr><th>보낸 사람</th><td>${esc(mailWho(m.from))} <span class="crumb">${esc(wkWho(m.from).dept || '')}</span></td></tr>
         <tr><th>받는 사람</th><td>${(m.to || []).map(n => esc(mailWho(n))).join(', ')}</td></tr>${m.cc?.length ? `<tr><th>참조</th><td>${m.cc.map(n => esc(mailWho(n))).join(', ')}</td></tr>` : ''}
         <tr><th>보낸 날짜</th><td class="num">${esc(m.sentAt || '')}</td></tr>
@@ -11476,26 +11475,34 @@ function openMail(m0) {
       <div class="post-body">${esc(m.body || '').replace(/\n/g, '<br>') || '<span class="crumb">(내용 없음)</span>'}</div>
       ${m.files?.length ? `<div class="post-files"><b>첨부파일 ${m.files.length}개</b><ul class="file-list">${m.files.map((x, i) => `<li><button type="button" class="linkish" data-fdl="${i}">${icon('clip')} ${esc(x.name)}</button><span class="num">${fmtSize(x.size)}</span></li>`).join('')}</ul></div>` : ''}
       <div class="form-actions">${inbox ? '<button class="btn primary" type="button" data-re>답장</button><button class="btn" type="button" data-reall>전체 답장</button>' : ''}<button class="btn" type="button" data-fw>전달</button><button class="btn" type="button" data-mdel>삭제</button><button class="btn" type="button" data-back>목록으로</button></div></article>`;
-    const quote = `\n\n----- 원본 메일 -----\n보낸 사람: ${mailWho(m.from)}\n보낸 날짜: ${m.sentAt}\n제목: ${m.title}\n\n${m.body || ''}`;
+    const quote = `\n\n----- 원본 -----\n보낸 사람: ${mailWho(m.from)}\n보낸 날짜: ${m.sentAt}\n제목: ${m.title}\n\n${m.body || ''}`;
     pane.addEventListener('click', e => {
       const f = e.target.closest('[data-fdl]'); if (f) saveAttachment(m.files[+f.dataset.fdl]);
       if (e.target.closest('[data-re]')) openMailEditor({ to: [m.from], title: `RE: ${m.title}`, body: quote, replyOf: m.sid });
       if (e.target.closest('[data-reall]')) openMailEditor({ to: [m.from, ...(m.to || []).filter(n => n !== ME.name)], cc: (m.cc || []).filter(n => n !== ME.name), title: `RE: ${m.title}`, body: quote, replyOf: m.sid });
       if (e.target.closest('[data-fw]')) openMailEditor({ title: `FW: ${m.title}`, body: quote, files: m.files });
-      if (e.target.closest('[data-back]')) openTab(inbox ? 'mail.inbox' : 'mail.sent');
-      if (e.target.closest('[data-mdel]')) confirmBox('메일 삭제', `<b>${esc(m.title)}</b><br>내 편지함에서 지웁니다. 상대방 편지함에는 남습니다.`, '삭제', () => {
+      if (e.target.closest('[data-back]')) openTab('mail.memo', { box: inbox ? 'in' : 'out' });
+      if (e.target.closest('[data-mdel]')) confirmBox('사내통신 삭제', `<b>${esc(m.title)}</b><br>내 통신함에서 지웁니다. 상대방 통신함에는 남습니다.`, '삭제', () => {
         if (inbox) { m[`d_${myEmpNo()}`] = true; shared.save('mail', m, [`d_${myEmpNo()}`]); } else { m.delSender = true; shared.save('mail', m, ['delSender']); }
-        closeTab(tabId); toast('메일을 지웠습니다.');
+        closeTab(tabId); toast('지웠습니다.');
       });
     });
   });
 }
-RENDERERS.mailbox = (pane, menu, item) => {
-  const box = item.id === 'sent' ? 'out' : 'in';
-  pane.innerHTML = head(menu, item) + `<form class="toolbar" data-ms><select class="field" data-mf aria-label="보기">${box === 'in' ? '<option value="">전체</option><option value="unread">안 읽은 메일</option>' : '<option value="">전체</option>'}</select>
+RENDERERS.mailbox = (pane, menu, item, key, opts) => {
+  let box = opts?.box === 'out' ? 'out' : 'in';
+  pane.innerHTML = head(menu, item) + `<div class="subtabs" role="tablist" data-mbox><button type="button" role="tab" class="subtab" data-box="in">받은 통신 <span class="num" data-nin></span></button><button type="button" role="tab" class="subtab" data-box="out">보낸 통신</button></div>
+    <form class="toolbar" data-ms><select class="field" data-mf aria-label="보기"></select>
       <input class="field" type="search" data-mq placeholder="제목 · 사람 검색" aria-label="검색"><button class="btn" type="submit">검색</button><span class="spacer"></span><span class="crumb" data-msum></span>
-      <button class="btn primary" type="button" data-mnew>${icon('write')} 메일 쓰기</button></form>
-    <div class="table-wrap"><table class="grid ml-list"><thead><tr><th style="width:180px">${box === 'in' ? '보낸 사람' : '받는 사람'}</th><th>제목</th><th style="width:150px">날짜</th>${box === 'out' ? '<th class="c" style="width:90px">읽음</th>' : ''}</tr></thead><tbody></tbody></table></div>`;
+      <button class="btn primary" type="button" data-mnew>${icon('write')} 사내통신 쓰기</button></form>
+    <div class="table-wrap"><table class="grid ml-list"><thead></thead><tbody></tbody></table></div>`;
+  const setBox = b => {
+    box = b === 'out' ? 'out' : 'in';
+    pane.querySelectorAll('[data-box]').forEach(t => t.setAttribute('aria-selected', String(t.dataset.box === box)));
+    pane.querySelector('[data-mf]').innerHTML = box === 'in' ? '<option value="">전체</option><option value="unread">안 읽은 통신</option>' : '<option value="">전체</option>';
+    pane.querySelector('thead').innerHTML = `<tr><th style="width:180px">${box === 'in' ? '보낸 사람' : '받는 사람'}</th><th>제목</th><th style="width:150px">날짜</th>${box === 'out' ? '<th class="c" style="width:90px">읽음</th>' : ''}</tr>`;
+    draw();
+  };
   const draw = () => {
     if (!pane.isConnected && pane.dataset.drawn) return false; pane.dataset.drawn = 1;
     const q = pane.querySelector('[data-mq]').value.trim(), fl = pane.querySelector('[data-mf]').value;
@@ -11504,15 +11511,19 @@ RENDERERS.mailbox = (pane, menu, item) => {
       const nread = all.filter(n => { const e = STAFF.find(s => s.name === n)?.empNo; return e && m[`r_${e}`]; }).length;
       return `<tr data-msid="${esc(m.sid)}" class="clickable ${unread ? 'ml-unread' : ''}"><td>${box === 'in' ? esc(mailWho(m.from)) : esc(m.to.map(mailWho).join(', '))}${box === 'out' && m.cc?.length ? ` <span class="crumb">외 참조 ${m.cc.length}</span>` : ''}</td>
         <td class="title">${unread ? '<span class="ml-dot" aria-label="안 읽음"></span>' : ''}${esc(m.title)}${m.files?.length ? ` ${icon('clip')}` : ''}</td><td class="num">${esc(m.sentAt || '')}</td>${box === 'out' ? `<td class="c num">${nread}/${all.length}</td>` : ''}</tr>`; }).join('')
-      : `<tr><td colspan="${box === 'out' ? 4 : 3}" class="empty">${box === 'in' ? '받은 메일이 없습니다.' : '보낸 메일이 없습니다.'} [메일 쓰기]로 직원에게 메일을 보낼 수 있습니다.</td></tr>`;
-    pane.querySelector('[data-msum]').textContent = box === 'in' ? `${rows.length}통 · 안 읽음 ${mailUnread()}` : `${rows.length}통`;
+      : `<tr><td colspan="${box === 'out' ? 4 : 3}" class="empty">${box === 'in' ? '받은 사내통신이 없습니다.' : '보낸 사내통신이 없습니다.'} [사내통신 쓰기]로 직원에게 보낼 수 있습니다.</td></tr>`;
+    const n = mailUnread();
+    pane.querySelector('[data-nin]').textContent = n ? n : '';
+    pane.querySelector('[data-msum]').textContent = box === 'in' ? `${rows.length}통 · 안 읽음 ${n}` : `${rows.length}통`;
     return true;
   };
+  pane.querySelector('[data-mbox]').addEventListener('click', e => { const t = e.target.closest('[data-box]'); if (t) setBox(t.dataset.box); });
   pane.querySelector('[data-ms]').addEventListener('submit', e => { e.preventDefault(); draw(); });
   pane.querySelector('[data-mf]').onchange = draw;
   pane.querySelector('[data-mnew]').onclick = () => openMailEditor();
   pane.querySelector('tbody').addEventListener('click', e => { const tr = e.target.closest('[data-msid]'); if (tr) { const m = mailAll().find(x => x.sid === tr.dataset.msid); if (m) openMail(m); } });
-  mailViews.add(draw); draw();
+  pane.apprSelect = o => { if (o?.box) setBox(o.box); };   // 이미 열린 사내통신 탭: 받은 · 보낸 통신 바꾸기
+  mailViews.add(draw); setBox(box);
 };
 /* ───────── 알림: 기록에서 바로 계산한다 (따로 저장하지 않음). 처리할 일 + 내 신청 · 문서의 결과 + 새 공지 · 메일
    마지막으로 알림을 연 시각(이 브라우저, 사번별) 뒤에 생긴 것만 숫자로 센다. 처리할 일은 남아 있는 동안 늘 센다 */
@@ -11537,7 +11548,7 @@ function notiList() {
     add(r._pat, 'work', `${label} <b>${esc(r.body || r.kind || r.purpose || '')}</b>: ${esc(r.status)}${r.okBy ? ` (${esc(r.okBy)})` : ''}`, () => openTab(key)));
   mine(OT_REQS, 'who', '연장근로', 'work.ot'); mine(CERTS, 'req', '증명서', 'work.cert'); mine(RENTS, 'who', '물품대여', 'work.prod'); mine(CAR_REQS, 'who', '차량신청', 'work.car');
   // 새 메일 · 새 공지
-  mailInbox().filter(m => !mailRead(m)).forEach(m => add(m.made || m.sentAt, 'mail', `<b>${esc(mailWho(m.from))}</b>님의 메일: ${esc(m.title)}`, () => openMail(m)));
+  mailInbox().filter(m => !mailRead(m)).forEach(m => add(m.made || m.sentAt, 'mail', `<b>${esc(mailWho(m.from))}</b>님의 사내통신: ${esc(m.title)}`, () => openMail(m)));
   shared.of('post').filter(p => p.board?.startsWith('notice.') && !(p.who || '').startsWith(ME.name)).forEach(p => {
     const fi = findItem(p.board); add(p.made, 'notice', `새 공지 · ${esc(fi?.item?.name || '')}: <b>${esc(p.title)}</b>`, () => { const row = BOARD_POSTS[p.board]?.find(x => x.sid === p.sid); if (row) openPost(fi.menu, row, p.board); else openTab(p.board); }); });
   return L.sort((a, b) => b.todo - a.todo || b.at - a.at).slice(0, 40);
